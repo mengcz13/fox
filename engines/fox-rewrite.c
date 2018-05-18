@@ -63,6 +63,12 @@ static int rewrite_start (struct fox_node *node)
     fox_start_node (node);
 
     do {
+        // test total run time
+        int erase_t;
+        for (erase_t = 0; erase_t < 10; erase_t++) {
+            fox_erase_all_vblks(node);
+            printf("Erasing %d...", erase_t);
+        }
         for (blk_i = 0; blk_i < t_blks; blk_i++) {
             ch_i = blk_i / blk_ch;
             lun_i = (blk_i % blk_ch) / blk_lun;

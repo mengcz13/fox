@@ -41,6 +41,7 @@
 #define FOX_ENGINE_1  0x1 /* All sequential */
 #define FOX_ENGINE_2  0x2 /* All round-robin */
 #define FOX_ENGINE_3  0x3 /* I/O Isolation */
+#define FOX_ENGINE_4  0x4 /* Rewrite Sequence */
 
 #define PROV_NBLK_PER_VBLK 0x1
 
@@ -412,6 +413,7 @@ struct fox_engine   *fox_get_engine(uint16_t);
 int                  foxeng_seq_init (struct fox_workload *);
 int                  foxeng_rr_init (struct fox_workload *);
 int                  foxeng_iso_init (struct fox_workload *);
+int                  foxeng_rewrite_init (struct fox_workload *);
 
 /* provisioning */
 int     prov_init(struct nvm_dev *dev, const struct nvm_geo *geo);

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <assert.h>
 #include <liblightnvm.h>
 #include "../fox.h"
 
@@ -59,6 +60,8 @@ int iterate_io(struct fox_node* node, struct fox_blkbuf* buf, struct rewrite_met
 int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr, uint64_t size, int mode);
 
 int read_block(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr);
+
+int read_page(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr);
 
 int erase_block(struct fox_node* node, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr);
 

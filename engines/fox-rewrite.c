@@ -169,11 +169,16 @@ int iterate_io(struct fox_node* node, struct fox_blkbuf* buf, struct rewrite_met
                     // collect page states in the block
                     for (tgeo.pg_i = 0; tgeo.pg_i < node->npgs; tgeo.pg_i++) {
                         meta->temp_page_state_inblk[tgeo.pg_i] = *get_p_page_state(meta, &tgeo);
+                        if (tgeo.pg_i < begin_pgi_inblk || tgeo.pg_i > end_pgi_inblk) {
+                            if (meta->temp_page_state_inblk[tgeo.pg_i] == PAGE_DIRTY) {
+                                read_page(node, buf, &tgeo);
+                            }
+                        }
                     }
-                    read_block(node, buf, &vpgibyteaddr);
                     erase_block(node, meta, &vpgibyteaddr);
                     // rewrite former dirty pages outside covered area
                     for (tgeo.pg_i = 0; tgeo.pg_i < node->npgs; tgeo.pg_i++) {
+                        assert(*get_p_page_state(meta, &tgeo) == PAGE_CLEAN);
                         if (tgeo.pg_i < begin_pgi_inblk || tgeo.pg_i > end_pgi_inblk) {
                             if (meta->temp_page_state_inblk[tgeo.pg_i] == PAGE_DIRTY) {
                                 rw_inside_page(node, buf, buf->buf_r + tgeo.pg_i * vpg_sz, meta, &tgeo, vpg_sz, WRITE_MODE);
@@ -252,6 +257,8 @@ int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* 
     } else if (mode == WRITE_MODE) {
         uint8_t* pgst = get_p_page_state(meta, geoaddr);
         if (*pgst == PAGE_DIRTY) {
+            printf("Writing to dirty page!\n");
+            printf("%" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %d\n", ch_i, lun_i, blk_i, pg_i, offset, mode);
             return 1;
         } else if (offset == 0 && size == vpg_sz) {
             memcpy(blockbuf->buf_w + vpg_sz * pg_i, databuf, size);
@@ -287,6 +294,15 @@ int read_block(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr
     return fox_read_blk(&node->vblk_tgt, node, buf, node->npgs, 0);
 }
 
+int read_page(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr) { 
+    uint64_t ch_i = geoaddr->ch_i;
+    uint64_t lun_i = geoaddr->lun_i;
+    uint64_t blk_i = geoaddr->blk_i;
+    uint64_t pg_i = geoaddr->pg_i;
+    fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
+    return fox_read_blk(&node->vblk_tgt, node, buf, 1, pg_i);
+}
+
 int erase_block(struct fox_node* node, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr) {
     uint64_t ch_i = geoaddr->ch_i;
     uint64_t lun_i = geoaddr->lun_i;
@@ -297,7 +313,7 @@ int erase_block(struct fox_node* node, struct rewrite_meta* meta, struct nodegeo
     *get_p_blk_state(meta, geoaddr) = BLOCK_CLEAN;
     struct nodegeoaddr tgeo = *geoaddr;
     for (tgeo.pg_i = 0; tgeo.pg_i < node->npgs; tgeo.pg_i++) {
-        *get_p_page_state(meta, geoaddr) = PAGE_CLEAN;
+        *get_p_page_state(meta, &tgeo) = PAGE_CLEAN;
     }
     return 0;
 }
@@ -318,63 +334,19 @@ static int rewrite_start (struct fox_node *node)
     if (fox_alloc_blk_buf (node, &nbuf))
         goto OUT;
 
+    uint64_t iosize = 524288;
+    uint8_t* databuf = calloc(iosize, sizeof(uint8_t));
+    struct rewrite_meta meta;
+    init_rewrite_meta(node, &meta);
+
     fox_start_node (node);
 
+    int t;
+    for (t = 0; t < 8; t++) {
+        iterate_io(node, &nbuf, &meta, databuf, 0, iosize, WRITE_MODE);
+    }
+    /*
     do {
-        // test total run time
-        int erase_t;
-        for (erase_t = 0; erase_t < 10; erase_t++) {
-            fox_erase_all_vblks(node);
-            printf("Erasing %d...", erase_t);
-        }
-        for (blk_i = 0; blk_i < t_blks; blk_i++) {
-            ch_i = blk_i / blk_ch;
-            lun_i = (blk_i % blk_ch) / blk_lun;
-
-            fox_vblk_tgt(node, node->ch[ch_i],node->lun[lun_i],blk_i % blk_lun);
-
-            if (node->wl->w_factor == 0)
-                goto READ;
-
-            pgoff_r = 0;
-            pgoff_w = 0;
-            while (pgoff_w < node->npgs) {
-                if (node->wl->r_factor == 0)
-                    npgs = node->npgs;
-                else
-                    npgs = (pgoff_w + node->wl->w_factor > node->npgs) ?
-                                    node->npgs - pgoff_w : node->wl->w_factor;
-
-                if (fox_write_blk(&node->vblk_tgt,node,&nbuf,npgs,pgoff_w))
-                    goto BREAK;
-                pgoff_w += npgs;
-
-                aux_r = 0;
-                while (aux_r < node->wl->r_factor) {
-                    if (node->wl->w_factor == 0)
-                        npgs = node->npgs;
-                    npgs = (pgoff_r + node->wl->r_factor > pgoff_w) ?
-                                    pgoff_w - pgoff_r : node->wl->r_factor;
-
-                    if (fox_read_blk(&node->vblk_tgt,node,&nbuf,npgs,pgoff_r))
-                        goto BREAK;
-
-                    aux_r += npgs;
-                    pgoff_r = (pgoff_r + node->wl->r_factor > pgoff_w) ?
-                                                            0 : pgoff_r + npgs;
-                }
-            }
-
-READ:
-            /* 100 % reads */
-            if (node->wl->w_factor == 0) {
-                if (fox_read_blk (&node->vblk_tgt,node,&nbuf,node->npgs,0))
-                    goto BREAK;
-            }
-            if (node->wl->r_factor > 0)
-                fox_blkbuf_reset(node, &nbuf);
-        }
-
 BREAK:
         if ((node->wl->stats->flags & FOX_FLAG_DONE) || !node->wl->runtime ||
                                                    node->stats.progress >= 100)
@@ -385,9 +357,12 @@ BREAK:
                 break;
 
     } while (1);
-
+    */
     fox_end_node (node);
+
     fox_free_blkbuf (&nbuf, 1);
+    free(databuf);
+    free_rewrite_meta(&meta);
     return 0;
 
 OUT:

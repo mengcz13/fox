@@ -18,16 +18,12 @@
 #define BLOCK_CLEAN 0
 #define BLOCK_DIRTY 1
 
-struct byte_addr {
-    uint64_t logic_byte_addr; // logic address aligned to byte (directly from logs)
-    uint32_t offset_in_page; // parts not aligned to page (in ocssd)
-    uint32_t offset_in_block; // parts not aligned to block (in ocssd)
-    uint64_t vpg_i;
-    uint32_t vblk_i;
-    int ch_i;
-    int lun_i;
-    int blk_i;
-    int pg_i;
+struct nodegeoaddr {
+    uint64_t offset_in_page; // parts not aligned to page (in ocssd)
+    uint64_t ch_i;
+    uint64_t lun_i;
+    uint64_t blk_i;
+    uint64_t pg_i;
 };
 
 struct rewrite_meta {
@@ -39,23 +35,27 @@ struct rewrite_meta {
     uint8_t* pagebuf;
 };
 
-uint64_t geo2vpg(struct fox_node* node, int ch_i, int lun_i, int blk_i, int pg_i);
+uint64_t geoaddr2vpg(struct fox_node* node, struct nodegeoaddr* geoaddr);
 
-uint64_t geo2vblk(struct fox_node* node, int ch_i, int lun_i, int blk_i);
+uint64_t geoaddr2vblk(struct fox_node* node, struct nodegeoaddr* geoaddr);
 
-uint8_t* get_p_page_state(struct rewrite_meta* meta, int ch_i, int lun_i, int blk_i, int pg_i);
+struct nodegeoaddr vpg2geoaddr(struct fox_node* node, uint64_t vpg_i);
 
-uint8_t* get_p_blk_state(struct rewrite_meta* meta, int ch_i, int lun_i, int blk_i);
+struct nodegeoaddr vblk2geoaddr(struct fox_node* node, uint64_t vblk_i);
+
+uint8_t* get_p_page_state(struct rewrite_meta* meta, struct nodegeoaddr* geoaddr);
+
+uint8_t* get_p_blk_state(struct rewrite_meta* meta, struct nodegeoaddr* geoaddr);
 
 int init_rewrite_meta(struct fox_node* node, struct rewrite_meta* meta);
 
 int free_rewrite_meta(struct rewrite_meta* meta);
 
-int set_byte_addr(struct fox_node* node, struct byte_addr* baddr, uint64_t lbyte_addr);
+int set_nodegeoaddr(struct fox_node* node, struct nodegeoaddr* baddr, uint64_t lbyte_addr);
 
-int iterate_byte_addr(struct fox_node* node, struct fox_blkbuf* buf, struct rewrite_meta* meta, uint64_t offset, uint64_t size, int mode);
+int iterate_io(struct fox_node* node, struct fox_blkbuf* buf, struct rewrite_meta* meta, uint64_t offset, uint64_t size, int mode);
 
-int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, int ch_i, int lun_i, int blk_i, int pg_i, uint32_t offset, uint32_t size, int mode);
+int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr, uint64_t size, int mode);
 
 /*
 int read_page(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_i, int blk_i, int pg_i, int npgs) {
@@ -64,7 +64,7 @@ int read_page(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_i
 }
 */
 
-int read_block(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_i, int blk_i);
+int read_block(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr);
 
 /*
 int write_page(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_i, int blk_i, int pg_i, int npgs) {
@@ -73,8 +73,8 @@ int write_page(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_
 }
 */
 
-int write_block(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_i, int blk_i);
+int write_block(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr);
 
-int erase_block(struct fox_node* node, int ch_i, int lun_i, int blk_i);
+int erase_block(struct fox_node* node, struct nodegeoaddr* geoaddr);
 
 #endif

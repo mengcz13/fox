@@ -29,15 +29,8 @@
  */
 
 /* ENGINE 4: Rewrite sequences:
- * (ch,lun,blk,pg)
- * (0,0,0,0)
- * (0,0,0,1)
- * (0,0,0,2)
- * (0,0,1,0)
- * (0,0,1,1)
- * (0,0,1,2)
- * (0,1,0,0)
- * (0,1,0,1) ...
+ * Read/write in place, erase if necessary
+ * Written by Chuizheng Meng <mengcz13@mails.tsinghua.edu.cn>
  */
 
 #include <stdio.h>
@@ -45,20 +38,57 @@
 #include "../fox.h"
 #include "fox-rewrite.h"
 
-uint64_t geo2vpg(struct fox_node* node, int ch_i, int lun_i, int blk_i, int pg_i) {
-    return (uint64_t)ch_i + (uint64_t)lun_i * node->nchs + (uint64_t)pg_i * node->nchs * node->nluns + (uint64_t)blk_i * node->nchs * node->nluns * node->npgs;
+uint64_t geoaddr2vpg(struct fox_node* node, struct nodegeoaddr* geoaddr) {
+    uint64_t ch_i = geoaddr->ch_i;
+    uint64_t lun_i = geoaddr->lun_i;
+    uint64_t blk_i = geoaddr->blk_i;
+    uint64_t pg_i = geoaddr->pg_i;
+    return ch_i + lun_i * node->nchs + pg_i * node->nchs * node->nluns + blk_i * node->nchs * node->nluns * node->npgs;
 }
 
-uint64_t geo2vblk(struct fox_node* node, int ch_i, int lun_i, int blk_i) {
-    return (uint64_t)ch_i + (uint64_t)lun_i * node->nchs + (uint64_t)blk_i * node->nchs * node->nluns;
+uint64_t geoaddr2vblk(struct fox_node* node, struct nodegeoaddr* geoaddr) {
+    uint64_t ch_i = geoaddr->ch_i;
+    uint64_t lun_i = geoaddr->lun_i;
+    uint64_t blk_i = geoaddr->blk_i;
+    return ch_i + lun_i * node->nchs + blk_i * node->nchs * node->nluns;
 }
 
-uint8_t* get_p_page_state(struct rewrite_meta* meta, int ch_i, int lun_i, int blk_i, int pg_i) {
-    return &(meta->page_state[geo2vpg(meta->node, ch_i, lun_i, blk_i, pg_i)]);
+struct nodegeoaddr vpg2geoaddr(struct fox_node* node, uint64_t vpg_i) {
+    struct nodegeoaddr geoaddr;
+    geoaddr.offset_in_page = 0; // aligned to page
+
+    uint64_t b_chs = node->nchs;
+    uint64_t b_luns = node->nluns * b_chs;
+    uint64_t b_pgs = node->npgs * b_luns;
+
+    geoaddr.ch_i = vpg_i % b_chs;
+    geoaddr.lun_i = vpg_i / b_chs % node->nluns;
+    geoaddr.pg_i = vpg_i / b_luns % node->npgs;
+    geoaddr.blk_i = vpg_i / b_pgs % node->nblks;
+    return geoaddr;
 }
 
-uint8_t* get_p_blk_state(struct rewrite_meta* meta, int ch_i, int lun_i, int blk_i) {
-    return &(meta->blk_state[geo2vblk(meta->node, ch_i, lun_i, blk_i)]);
+struct nodegeoaddr vblk2geoaddr(struct fox_node* node, uint64_t vblk_i) {
+    struct nodegeoaddr geoaddr;
+    geoaddr.offset_in_page = 0; // aligned to page
+    geoaddr.pg_i = 0; //aligned to block
+
+    uint64_t b_chs = node->nchs;
+    uint64_t b_luns = node->nluns * b_chs;
+    
+    geoaddr.ch_i = vblk_i % b_chs;
+    geoaddr.lun_i = vblk_i / b_chs % node->nluns;
+    geoaddr.blk_i = vblk_i / b_luns % node->nblks;
+
+    return geoaddr;
+}
+
+uint8_t* get_p_page_state(struct rewrite_meta* meta, struct nodegeoaddr* geoaddr) {
+    return &(meta->page_state[geoaddr2vpg(meta->node, geoaddr)]);
+}
+
+uint8_t* get_p_blk_state(struct rewrite_meta* meta, struct nodegeoaddr* geoaddr) {
+    return &(meta->blk_state[geoaddr2vblk(meta->node, geoaddr)]);
 }
 
 int init_rewrite_meta(struct fox_node* node, struct rewrite_meta* meta) {
@@ -82,120 +112,106 @@ int free_rewrite_meta(struct rewrite_meta* meta) {
     return 0;
 }
 
-int set_byte_addr(struct fox_node* node, struct byte_addr* baddr, uint64_t lbyte_addr) {
+int set_nodegeoaddr(struct fox_node* node, struct nodegeoaddr* baddr, uint64_t lbyte_addr) {
     size_t vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
     uint64_t max_addr_in_node = (uint64_t)node->nchs * node->nluns * node->nblks * node->npgs * vpg_sz - 1;
-    
     if (lbyte_addr > max_addr_in_node) {
         printf("Logic addr 0x%" PRIx64 " exceeds max addr in node 0x%" PRIx64 "!", lbyte_addr, max_addr_in_node);
         return 1;
     }
-
-    uint64_t b_chs = node->nchs;
-    uint64_t b_luns = node->nluns * b_chs;
-    uint64_t b_pgs = node->npgs * b_luns;
-    
-    baddr->logic_byte_addr = lbyte_addr;
-    baddr->offset_in_page = (uint32_t)(lbyte_addr % vpg_sz);
     uint64_t vpg_i = lbyte_addr / vpg_sz;
-    baddr->vpg_i = vpg_i;
-
-    baddr->ch_i = (uint32_t)(vpg_i % b_chs);
-    baddr->lun_i = (uint32_t)((vpg_i / b_chs) % node->nluns);
-    baddr->pg_i = (uint32_t)((vpg_i / b_luns) % node->npgs);
-    baddr->blk_i = (uint32_t)((vpg_i / b_pgs) % node->nblks);
-
-    baddr->offset_in_block = baddr->pg_i * vpg_sz + baddr->offset_in_page;
-
-    baddr->vblk_i = baddr->ch_i + baddr->lun_i * b_chs + baddr->blk_i * b_luns;
+    *baddr = vpg2geoaddr(node, vpg_i);
+    baddr->offset_in_page = lbyte_addr % vpg_sz;
     return 0;
 }
 
-int iterate_byte_addr(struct fox_node* node, struct fox_blkbuf* buf, struct rewrite_meta* meta, uint64_t offset, uint64_t size, int mode) {
+int iterate_io(struct fox_node* node, struct fox_blkbuf* buf, struct rewrite_meta* meta, uint64_t offset, uint64_t size, int mode) {
     size_t vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
     // main func to handle each IO...
     // iterate based on channel->lun->page->block
     // maintain a state table for each page: clean/dirty/abandoned... (need considering a FSM!)
     // naive version: hit->erase->write
     // log-structured version: hit->abandon->alloc new
-    struct byte_addr offset_begin;
-    struct byte_addr offset_end;
-    set_byte_addr(node, &offset_begin, offset);
-    set_byte_addr(node, &offset_end, offset + size - 1); // [offset_begin, offset_end]
+    struct nodegeoaddr offset_begin;
+    struct nodegeoaddr offset_end;
+    set_nodegeoaddr(node, &offset_begin, offset);
+    set_nodegeoaddr(node, &offset_end, offset + size - 1); // [offset_begin, offset_end]
+    uint64_t vpg_i_begin = offset / vpg_sz;
+    uint64_t vpg_i_end = (offset + size - 1) / vpg_sz;
 
     if (mode == WRITE_MODE) {
         // erase if necessary...
-        uint64_t vpg_i_begin = offset_begin.vpg_i;
-        uint64_t vpg_i_end = offset_end.vpg_i;
         uint64_t vpgi;
-        struct byte_addr vpgibyteaddr;
-        rw_inside_page(node, buf, meta->begin_pagebuf, meta, offset_begin.ch_i, offset_begin.lun_i, offset_begin.blk_i, offset_begin.pg_i, 0, vpg_sz, READ_MODE);
-        rw_inside_page(node, buf, meta->end_pagebuf, meta, offset_end.ch_i, offset_end.lun_i, offset_end.blk_i, offset_end.pg_i, 0, vpg_sz, READ_MODE);
+        struct nodegeoaddr vpgibyteaddr;
+        struct nodegeoaddr vpgibegingeo = vpg2geoaddr(node, vpg_i_begin);
+        rw_inside_page(node, buf, meta->begin_pagebuf, meta, &vpgibegingeo, vpg_sz, READ_MODE);
+        struct nodegeoaddr vpgiendgeo = vpg2geoaddr(node, vpg_i_end);
+        rw_inside_page(node, buf, meta->end_pagebuf, meta, &vpgiendgeo, vpg_sz, READ_MODE);
         for (vpgi = vpg_i_begin; vpgi <= vpg_i_end; vpgi++) {
-            set_byte_addr(node, &vpgibyteaddr, vpgi * vpg_sz);
-            if (meta->blk_state[vpgibyteaddr.vblk_i] == BLOCK_DIRTY) {
+            vpgibyteaddr = vpg2geoaddr(node, vpgi);
+            if (*get_p_blk_state(meta, &vpgibyteaddr) == BLOCK_DIRTY) {
                 uint8_t covered_blk_state = BLOCK_CLEAN;
-                int pgi_inblk;
-                uint64_t cvpgi = vpgi;
+                struct nodegeoaddr tgeo = vpgibyteaddr;
                 int begin_pgi_inblk = vpgibyteaddr.pg_i;
                 int end_pgi_inblk;
-                for (pgi_inblk = vpgibyteaddr.pg_i; pgi_inblk < node->npgs && cvpgi <= vpg_i_end; pgi_inblk++) {
-                    if (meta->page_state[cvpgi] == PAGE_DIRTY) {
+                for (; tgeo.pg_i < node->npgs && geoaddr2vpg(node, &tgeo) <= vpg_i_end; tgeo.pg_i++) {
+                    if (*get_p_page_state(meta, &tgeo) == PAGE_DIRTY) {
                         covered_blk_state = BLOCK_DIRTY;
                     }
-                    cvpgi += (node->nchs * node->nluns);
                 }
-                end_pgi_inblk = pgi_inblk - 1;
+                end_pgi_inblk = tgeo.pg_i - 1;
                 if (covered_blk_state == BLOCK_DIRTY) {
-                    read_block(node, buf, vpgibyteaddr.ch_i, vpgibyteaddr.lun_i, vpgibyteaddr.blk_i);
-                    erase_block(node, vpgibyteaddr.ch_i, vpgibyteaddr.lun_i, vpgibyteaddr.blk_i);
+                    read_block(node, buf, &vpgibyteaddr);
+                    erase_block(node, &vpgibyteaddr);
                     if (begin_pgi_inblk > 0) {
-                        int wi_inblk;
-                        for (wi_inblk = 0; wi_inblk < begin_pgi_inblk; wi_inblk++) {
-                            rw_inside_page(node, buf, buf->buf_r + wi_inblk * vpg_sz, meta, vpgibyteaddr.ch_i, vpgibyteaddr.lun_i, vpgibyteaddr.blk_i, wi_inblk, 0, vpg_sz, WRITE_MODE);
+                        struct nodegeoaddr tgeo = vpgibyteaddr;
+                        for (tgeo.pg_i = 0; tgeo.pg_i < begin_pgi_inblk; tgeo.pg_i++) {
+                            rw_inside_page(node, buf, buf->buf_r + tgeo.pg_i * vpg_sz, meta, &tgeo, vpg_sz, WRITE_MODE);
                         }
                     }
                     if (end_pgi_inblk < node->npgs - 1) {
-                        int wi_inblk;
-                        for (wi_inblk = end_pgi_inblk + 1; wi_inblk < node->npgs; wi_inblk++) {
-                            rw_inside_page(node, buf, buf->buf_r + wi_inblk * vpg_sz, meta, vpgibyteaddr.ch_i, vpgibyteaddr.lun_i, vpgibyteaddr.blk_i, wi_inblk, 0, vpg_sz, WRITE_MODE);
+                        struct nodegeoaddr tgeo = vpgibyteaddr;
+                        for (tgeo.pg_i = end_pgi_inblk + 1; tgeo.pg_i < node->npgs; tgeo.pg_i++) {
+                            rw_inside_page(node, buf, buf->buf_r + tgeo.pg_i * vpg_sz, meta, &tgeo, vpg_sz, WRITE_MODE);
                         }
                     }
                 }
-                meta->blk_state[vpgibyteaddr.vblk_i] = BLOCK_CLEAN;
+                *get_p_blk_state(meta, &vpgibyteaddr) = BLOCK_CLEAN;
             }
         }
     }
 
     if (mode == READ_MODE || mode == WRITE_MODE) {
         // read or write...
-        if (offset_begin.vpg_i == offset_end.vpg_i) {
-            rw_inside_page(node, buf, meta->pagebuf, meta, offset_begin.ch_i, offset_begin.lun_i, offset_begin.blk_i, offset_begin.pg_i, offset_begin.offset_in_page, size, mode);
+        if (vpg_i_begin == vpg_i_end) {
+            rw_inside_page(node, buf, meta->pagebuf, meta, &offset_begin, size, mode);
         } else {
             // rw begin page
-            rw_inside_page(node, buf, meta->pagebuf, meta, offset_begin.ch_i, offset_begin.lun_i, offset_begin.blk_i, offset_begin.pg_i, offset_begin.offset_in_page, vpg_sz - offset_begin.offset_in_page, mode);
+            rw_inside_page(node, buf, meta->pagebuf, meta, &offset_begin, vpg_sz - offset_begin.offset_in_page, mode);
             // rw middle pages
-            if (offset_end.vpg_i - offset_begin.vpg_i > 1) {
-                uint64_t middle_pgn = offset_end.vpg_i - offset_begin.vpg_i - 2;
+            if (vpg_i_end - vpg_i_begin > 1) {
                 uint64_t middle_pgi;
-                struct byte_addr middle_pgi_begin;
-                uint64_t pg_aligned_middle_addri = offset / vpg_sz * vpg_sz;
-                pg_aligned_middle_addri += vpg_sz;
-                for (middle_pgi = 0; middle_pgi < middle_pgn; middle_pgi++) {
-                    set_byte_addr(node, &middle_pgi_begin, pg_aligned_middle_addri);
-                    rw_inside_page(node, buf, meta->pagebuf, meta, middle_pgi_begin.ch_i, middle_pgi_begin.lun_i, middle_pgi_begin.blk_i, middle_pgi_begin.pg_i, 0, vpg_sz, mode);
-                    pg_aligned_middle_addri += vpg_sz;
+                for (middle_pgi = vpg_i_begin + 1; middle_pgi < vpg_i_end; middle_pgi++) {
+                    struct nodegeoaddr tgeo = vpg2geoaddr(node, middle_pgi);
+                    rw_inside_page(node, buf, meta->pagebuf, meta, &tgeo, vpg_sz, mode);
                 }
             }
             // rw end page
-            rw_inside_page(node, buf, meta->pagebuf, meta, offset_end.ch_i, offset_end.lun_i, offset_end.blk_i, offset_end.pg_i, 0, offset_end.offset_in_page + 1, mode);
+            struct nodegeoaddr tgeo = offset_end;
+            tgeo.offset_in_page = 0;
+            rw_inside_page(node, buf, meta->pagebuf, meta, &tgeo, offset_end.offset_in_page + 1, mode);
         }
         return 0;
     }
     return 0;
 }
 
-int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, int ch_i, int lun_i, int blk_i, int pg_i, uint32_t offset, uint32_t size, int mode) {
+int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr, uint64_t size, int mode) {
+    uint64_t ch_i = geoaddr->ch_i;
+    uint64_t lun_i = geoaddr->lun_i;
+    uint64_t blk_i = geoaddr->blk_i;
+    uint64_t pg_i = geoaddr->pg_i;
+    uint64_t offset = geoaddr->offset_in_page;
     fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
     size_t vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
     if (offset >= vpg_sz || offset + size > vpg_sz) {
@@ -222,9 +238,9 @@ int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* 
                 return 1;
             }
         }
-        uint8_t* pgst = get_p_page_state(meta, ch_i, lun_i, blk_i, pg_i);
+        uint8_t* pgst = get_p_page_state(meta, geoaddr);
         *pgst = PAGE_DIRTY;
-        uint8_t* blkst = get_p_blk_state(meta, ch_i, lun_i, blk_i);
+        uint8_t* blkst = get_p_blk_state(meta, geoaddr);
         *blkst = BLOCK_DIRTY;
     }
     return 0;
@@ -237,7 +253,10 @@ int read_page(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_i
 }
 */
 
-int read_block(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_i, int blk_i) {
+int read_block(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr) {
+    uint64_t ch_i = geoaddr->ch_i;
+    uint64_t lun_i = geoaddr->lun_i;
+    uint64_t blk_i = geoaddr->blk_i;
     fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
     return fox_read_blk(&node->vblk_tgt, node, buf, node->npgs, 0);
 }
@@ -249,12 +268,18 @@ int write_page(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_
 }
 */
 
-int write_block(struct fox_node* node, struct fox_blkbuf* buf, int ch_i, int lun_i, int blk_i) {
+int write_block(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr) {
+    uint64_t ch_i = geoaddr->ch_i;
+    uint64_t lun_i = geoaddr->lun_i;
+    uint64_t blk_i = geoaddr->blk_i;
     fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
     return fox_write_blk(&node->vblk_tgt, node, buf, node->npgs, 0);
 }
 
-int erase_block(struct fox_node* node, int ch_i, int lun_i, int blk_i) {
+int erase_block(struct fox_node* node, struct nodegeoaddr* geoaddr) {
+    uint64_t ch_i = geoaddr->ch_i;
+    uint64_t lun_i = geoaddr->lun_i;
+    uint64_t blk_i = geoaddr->blk_i;
     fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
     return fox_erase_blk(&node->vblk_tgt, node);
 }

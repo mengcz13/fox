@@ -1,5 +1,5 @@
-#ifndef FOX_REWRITE_H
-#define FOX_REWRITE_H
+#ifndef FOX_REWRITE_UTILS_H
+#define FOX_REWRITE_UTILS_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,8 +54,6 @@ int init_rewrite_meta(struct fox_node* node, struct rewrite_meta* meta);
 int free_rewrite_meta(struct rewrite_meta* meta);
 
 int set_nodegeoaddr(struct fox_node* node, struct nodegeoaddr* baddr, uint64_t lbyte_addr);
-
-int iterate_io(struct fox_node* node, struct fox_blkbuf* buf, struct rewrite_meta* meta, uint8_t* resbuf, uint64_t offset, uint64_t size, int mode);
 
 int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr, uint64_t size, int mode);
 

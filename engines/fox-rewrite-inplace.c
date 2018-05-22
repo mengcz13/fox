@@ -57,9 +57,11 @@ static int iterate_inplace_io(struct fox_node* node, struct fox_blkbuf* buf, str
         uint64_t vpgi;
         struct nodegeoaddr vpgibyteaddr;
         struct nodegeoaddr vpgibegingeo = vpg2geoaddr(node, vpg_i_begin);
-        rw_inside_page(node, buf, meta->begin_pagebuf, meta, &vpgibegingeo, vpg_sz, READ_MODE);
+        if (((vpg_i_begin == vpg_i_end) && (offset_begin.offset_in_page != 0 || offset_end.offset_in_page != vpg_sz - 1)) || ((vpg_i_begin < vpg_i_end) && (offset_begin.offset_in_page != 0)))
+            rw_inside_page(node, buf, meta->begin_pagebuf, meta, &vpgibegingeo, vpg_sz, READ_MODE);
         struct nodegeoaddr vpgiendgeo = vpg2geoaddr(node, vpg_i_end);
-        rw_inside_page(node, buf, meta->end_pagebuf, meta, &vpgiendgeo, vpg_sz, READ_MODE);
+        if ((vpg_i_begin < vpg_i_end) && (offset_end.offset_in_page != vpg_sz - 1))
+            rw_inside_page(node, buf, meta->end_pagebuf, meta, &vpgiendgeo, vpg_sz, READ_MODE);
         for (vpgi = vpg_i_begin; vpgi <= vpg_i_end; vpgi++) {
             vpgibyteaddr = vpg2geoaddr(node, vpgi);
             if (*get_p_blk_state(meta, &vpgibyteaddr) == BLOCK_DIRTY) {
@@ -113,8 +115,12 @@ static int iterate_inplace_io(struct fox_node* node, struct fox_blkbuf* buf, str
             if (mode == READ_MODE) {
                 rw_inside_page(node, buf, resbuf_t, meta, &offset_begin, size, mode);
             } else if (mode == WRITE_MODE) {
-                memcpy(meta->begin_pagebuf + offset_begin.offset_in_page, resbuf_t, size);
-                rw_inside_page(node, buf, meta->begin_pagebuf, meta, &vpg_geo_begin, vpg_sz, mode);
+                if (offset_begin.offset_in_page != 0 || offset_end.offset_in_page != vpg_sz - 1) {
+                    memcpy(meta->begin_pagebuf + offset_begin.offset_in_page, resbuf_t, size);
+                    rw_inside_page(node, buf, meta->begin_pagebuf, meta, &vpg_geo_begin, vpg_sz, mode);
+                } else {
+                    rw_inside_page(node, buf, resbuf_t, meta, &offset_begin, size, mode);
+                }
             }
             resbuf_t += size;
         } else {
@@ -122,8 +128,12 @@ static int iterate_inplace_io(struct fox_node* node, struct fox_blkbuf* buf, str
             if (mode == READ_MODE) {
                 rw_inside_page(node, buf, resbuf_t, meta, &offset_begin, vpg_sz - offset_begin.offset_in_page, mode);
             } else if (mode == WRITE_MODE) {
-                memcpy(meta->begin_pagebuf + offset_begin.offset_in_page, resbuf_t, vpg_sz - offset_begin.offset_in_page);
-                rw_inside_page(node, buf, meta->begin_pagebuf, meta, &vpg_geo_begin, vpg_sz, mode);
+                if (offset_begin.offset_in_page != 0) {
+                    memcpy(meta->begin_pagebuf + offset_begin.offset_in_page, resbuf_t, vpg_sz - offset_begin.offset_in_page);
+                    rw_inside_page(node, buf, meta->begin_pagebuf, meta, &vpg_geo_begin, vpg_sz, mode);
+                } else {
+                    rw_inside_page(node, buf, resbuf_t, meta, &offset_begin, vpg_sz, mode);
+                }
             }
             resbuf_t += (vpg_sz - offset_begin.offset_in_page);
             // rw middle pages
@@ -139,8 +149,12 @@ static int iterate_inplace_io(struct fox_node* node, struct fox_blkbuf* buf, str
             if (mode == READ_MODE) {
                 rw_inside_page(node, buf, resbuf_t, meta, &vpg_geo_end, offset_end.offset_in_page + 1, mode);
             } else if (mode == WRITE_MODE) {
-                memcpy(meta->end_pagebuf, resbuf_t, offset_end.offset_in_page + 1);
-                rw_inside_page(node, buf, meta->end_pagebuf, meta, &vpg_geo_end, vpg_sz, mode);
+                if (offset_end.offset_in_page != vpg_sz - 1) {
+                    memcpy(meta->end_pagebuf, resbuf_t, offset_end.offset_in_page + 1);
+                    rw_inside_page(node, buf, meta->end_pagebuf, meta, &vpg_geo_end, vpg_sz, mode);
+                } else {
+                    rw_inside_page(node, buf, resbuf_t, meta, &vpg_geo_end, vpg_sz, mode);
+                }
             }
             resbuf_t += (offset_end.offset_in_page + 1);
         }

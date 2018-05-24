@@ -40,6 +40,18 @@
 #include "../fox.h"
 #include "fox-rewrite-utils.h"
 
+static struct ls_meta {
+    uint64_t used_end_ppg;
+    uint64_t used_begin_ppg;
+    uint64_t used_pg_count;
+};
+
+static int init_ls_meta(struct ls_meta* lm) {
+    lm->used_begin_ppg = 0;
+    lm->used_end_ppg = 0;
+    lm->used_pg_count = 0;
+}
+
 static int iterate_ls_io(struct fox_node* node, struct fox_blkbuf* buf, struct rewrite_meta* meta, uint8_t* resbuf, uint64_t offset, uint64_t size, int mode) {
     size_t vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
     // main func to handle each IO...

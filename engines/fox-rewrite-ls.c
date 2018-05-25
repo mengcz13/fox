@@ -44,13 +44,24 @@ static struct ls_meta {
     uint64_t used_end_ppg;
     uint64_t used_begin_ppg;
     uint64_t used_pg_count;
+    uint64_t* vpg2ppg
 };
 
-static int init_ls_meta(struct ls_meta* lm) {
+static int init_ls_meta(struct rewrite_meta* meta, struct ls_meta* lm) {
     lm->used_begin_ppg = 0;
     lm->used_end_ppg = 0;
     lm->used_pg_count = 0;
+    lm->vpg2ppg = (uint64_t*)calloc(meta->total_pagenum, sizeof(uint64_t));
+    int vpi;
+    for (vpi = 0; vpi < meta->total_pagenum; vpi++) {
+        lm->vpg2ppg[pi] = pi;
+    }
+    return 0;
 }
+
+static int garbage_collection();
+
+static int allocate_page();
 
 static int iterate_ls_io(struct fox_node* node, struct fox_blkbuf* buf, struct rewrite_meta* meta, uint8_t* resbuf, uint64_t offset, uint64_t size, int mode) {
     size_t vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
@@ -66,59 +77,8 @@ static int iterate_ls_io(struct fox_node* node, struct fox_blkbuf* buf, struct r
     uint64_t vpg_i_begin = offset / vpg_sz;
     uint64_t vpg_i_end = (offset + size - 1) / vpg_sz;
 
-    if (mode == WRITE_MODE) {
-        // erase if necessary...
-        uint64_t vpgi;
-        struct nodegeoaddr vpgibyteaddr;
-        struct nodegeoaddr vpgibegingeo = vpg2geoaddr(node, vpg_i_begin);
-        rw_inside_page(node, buf, meta->begin_pagebuf, meta, &vpgibegingeo, vpg_sz, READ_MODE);
-        struct nodegeoaddr vpgiendgeo = vpg2geoaddr(node, vpg_i_end);
-        rw_inside_page(node, buf, meta->end_pagebuf, meta, &vpgiendgeo, vpg_sz, READ_MODE);
-        for (vpgi = vpg_i_begin; vpgi <= vpg_i_end; vpgi++) {
-            vpgibyteaddr = vpg2geoaddr(node, vpgi);
-            if (*get_p_blk_state(meta, &vpgibyteaddr) == BLOCK_DIRTY) {
-                uint8_t covered_blk_state = BLOCK_CLEAN;
-                struct nodegeoaddr tgeo = vpgibyteaddr;
-                int begin_pgi_inblk = vpgibyteaddr.pg_i;
-                int end_pgi_inblk;
-                // only erase when covered area has dirty pages
-                // or we can write directly
-                for (; tgeo.pg_i < node->npgs && geoaddr2vpg(node, &tgeo) <= vpg_i_end; tgeo.pg_i++) {
-                    if (*get_p_page_state(meta, &tgeo) == PAGE_DIRTY) {
-                        covered_blk_state = BLOCK_DIRTY;
-                    }
-                }
-                end_pgi_inblk = tgeo.pg_i - 1;
-                if (covered_blk_state == BLOCK_DIRTY) {
-                    struct nodegeoaddr tgeo = vpgibyteaddr;
-                    // collect page states in the block
-                    for (tgeo.pg_i = 0; tgeo.pg_i < node->npgs; tgeo.pg_i++) {
-                        meta->temp_page_state_inblk[tgeo.pg_i] = *get_p_page_state(meta, &tgeo);
-                        if (tgeo.pg_i < begin_pgi_inblk || tgeo.pg_i > end_pgi_inblk) {
-                            if (meta->temp_page_state_inblk[tgeo.pg_i] == PAGE_DIRTY) {
-                                read_page(node, buf, &tgeo);
-                            }
-                        }
-                    }
-                    erase_block(node, meta, &vpgibyteaddr);
-                    // rewrite former dirty pages outside covered area
-                    for (tgeo.pg_i = 0; tgeo.pg_i < node->npgs; tgeo.pg_i++) {
-                        assert(*get_p_page_state(meta, &tgeo) == PAGE_CLEAN);
-                        if (tgeo.pg_i < begin_pgi_inblk || tgeo.pg_i > end_pgi_inblk) {
-                            if (meta->temp_page_state_inblk[tgeo.pg_i] == PAGE_DIRTY) {
-                                rw_inside_page(node, buf, buf->buf_r + tgeo.pg_i * vpg_sz, meta, &tgeo, vpg_sz, WRITE_MODE);
-                            }
-                        }
-                    }
-                }
-                // mark checked blocks with BLOCK_CLEAN
-                // this should be fine since these blocks will be written later and go to BLOCK_DIRTY again
-                *get_p_blk_state(meta, &vpgibyteaddr) = BLOCK_CLEAN;
-            }
-        }
-    }
-
-    if (mode == READ_MODE || mode == WRITE_MODE) {
+    // if (mode == READ_MODE || mode == WRITE_MODE) {
+    if (mode == READ_MODE) {
         struct nodegeoaddr vpg_geo_begin = vpg2geoaddr(node, vpg_i_begin);
         struct nodegeoaddr vpg_geo_end = vpg2geoaddr(node, vpg_i_end);
         uint8_t* resbuf_t = resbuf;

@@ -29,6 +29,8 @@ struct nodegeoaddr {
 
 struct rewrite_meta {
     struct fox_node* node;
+    uint64_t total_pagenum;
+    size_t vpg_sz;
     uint8_t* page_state; // state of all pages in node
     uint8_t* blk_state; // state of all blocks in node
     uint8_t* temp_page_state_inblk; // temporarily store page state in one block, used for collecting dirty pages in one block before erase it, useful for rewriting dirty pages

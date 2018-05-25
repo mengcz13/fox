@@ -55,10 +55,12 @@ uint8_t* get_p_blk_state(struct rewrite_meta* meta, struct nodegeoaddr* geoaddr)
 
 int init_rewrite_meta(struct fox_node* node, struct rewrite_meta* meta) {
     meta->node = node;
+    meta->vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
+    meta->total_pagenum = node->nluns * node->nchs * node->nblks * node->npgs;
     meta->page_state = (uint8_t*)calloc(node->nluns * node->nchs * node->nblks * node->npgs, sizeof(uint8_t));
     meta->blk_state = (uint8_t*)calloc(node->nluns * node->nchs * node->nblks, sizeof(uint8_t));
     meta->temp_page_state_inblk = (uint8_t*)calloc(node->npgs, sizeof(uint8_t));
-    size_t vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
+    size_t vpg_sz = meta->vpg_sz;
     meta->begin_pagebuf = (uint8_t*)calloc(vpg_sz, sizeof(uint8_t));
     meta->end_pagebuf = (uint8_t*)calloc(vpg_sz, sizeof(uint8_t));
     meta->pagebuf = (uint8_t*)calloc(vpg_sz, sizeof(uint8_t));

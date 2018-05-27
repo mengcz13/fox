@@ -122,6 +122,8 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
             lm->meta->page_state[oldppg] = PAGE_ABANDONED;
             lm->dirty_pg_count--;
             lm->abandoned_pg_count++;
+            lm->vpg2ppg[vpg_i] = lm->meta->total_pagenum;
+            lm->ppg2vpg[oldppg] = lm->meta->total_pagenum;
         }
     }
     uint64_t used_last_ppg = (lm->used_end_ppg + lm->meta->total_pagenum - 1) % (lm->meta->total_pagenum);
@@ -165,9 +167,9 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
                     rw_inside_page(lm->meta->node, lm->blockbuf, lm->clblocks_buf + dirty_i * lm->meta->vpg_sz, lm->meta, &nfblk, lm->meta->vpg_sz, WRITE_MODE);
                     uint64_t vpgi = lm->clblocks_vpgbuf[dirty_i];
                     uint64_t oldppgi = lm->vpg2ppg[vpgi];
+                    lm->ppg2vpg[oldppgi] = lm->meta->total_pagenum;
                     lm->vpg2ppg[vpgi] = nfblkppg;
                     lm->ppg2vpg[nfblkppg] = vpgi;
-                    lm->ppg2vpg[oldppgi] = lm->meta->total_pagenum;
                     nfblkppg = (nfblkppg + 1) % lm->meta->total_pagenum;
                     nfblk = vpg2geoaddr(lm->meta->node, nfblkppg);
                 }
@@ -212,9 +214,9 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
                 rw_inside_page(lm->meta->node, lm->blockbuf, lm->meta->pagebuf, lm->meta, &currpgaddr, lm->meta->vpg_sz, READ_MODE);
                 rw_inside_page(lm->meta->node, lm->blockbuf, lm->meta->pagebuf, lm->meta, &nfblk, lm->meta->vpg_sz, WRITE_MODE);
                 uint64_t vpgi = lm->ppg2vpg[currpg];
+                lm->ppg2vpg[currpg] = lm->meta->total_pagenum;
                 lm->vpg2ppg[vpgi] = nfblkppg;
                 lm->ppg2vpg[nfblkppg] = vpgi;
-                lm->ppg2vpg[currpg] = lm->meta->total_pagenum;
                 nfblkppg = (nfblkppg + 1) % (lm->meta->total_pagenum);
                 nfblk = vpg2geoaddr(lm->meta->node, nfblkppg);
             }
@@ -234,6 +236,7 @@ static uint64_t allocate_page(struct ls_meta* lm, uint64_t vpg_i) {
         lm->dirty_pg_count--;
         lm->abandoned_pg_count++;
         lm->ppg2vpg[oldppg] = lm->meta->total_pagenum;
+        lm->vpg2ppg[vpg_i] = lm->meta->total_pagenum;
     }
     uint64_t newppg = lm->used_end_ppg;
     lm->used_end_ppg = (lm->used_end_ppg + 1) % lm->meta->total_pagenum;

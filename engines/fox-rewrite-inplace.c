@@ -171,8 +171,10 @@ static int rewrite_inplace_start (struct fox_node *node)
     if (fox_alloc_blk_buf (node, &nbuf))
         goto OUT;
 
-    uint64_t iosize = 524288;
-    uint8_t* databuf = calloc(iosize, sizeof(uint8_t));
+    uint64_t iosize_single = 524288;
+    uint64_t iosize = 4 * iosize_single;
+    uint64_t offset_i = 0;
+    uint8_t* databuf = (uint8_t*)calloc(iosize, sizeof(uint8_t));
     struct rewrite_meta meta;
     init_rewrite_meta(node, &meta);
 
@@ -180,7 +182,8 @@ static int rewrite_inplace_start (struct fox_node *node)
 
     int t;
     for (t = 0; t < 8; t++) {
-        iterate_inplace_io(node, &nbuf, &meta, databuf, 0, iosize, WRITE_MODE);
+        iterate_inplace_io(node, &nbuf, &meta, databuf, offset_i, iosize, WRITE_MODE);
+        offset_i += iosize_single;
     }
     /*
     do {

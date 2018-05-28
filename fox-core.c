@@ -33,6 +33,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/queue.h>
+#include <inttypes.h>
 #include "fox.h"
 
 LIST_HEAD(node_list, fox_node) node_head = LIST_HEAD_INITIALIZER(node_head);
@@ -218,6 +219,7 @@ int main (int argc, char **argv) {
     wl->max_delay = argp->max_delay;
     wl->memcmp = argp->memcmp;
     wl->output = argp->output;
+    wl->inputiopath = argp->inputiopath;
 
     if (wl->devname[0] == 0) {
         wl->devname = malloc (13);
@@ -257,6 +259,26 @@ int main (int argc, char **argv) {
             printf ("\n NOTE: This mode requires geometry write buffer (3).\n");
             wl->memcmp = WB_GEOMETRY;
         }
+
+    // If using engine 4/5, read input io records
+    FILE* pfile = fopen(wl->inputiopath, "r");
+    if (pfile == NULL)
+        goto EXIT_ENG;
+    uint64_t t_offset, t_size, t_recnum;
+    char t_iotype;
+    if (fscanf(pfile, "%" PRIx64, &t_recnum) == EOF)
+        goto EXIT_ENG;
+    wl->ioseq = calloc(t_recnum, sizeof(struct fox_iounit));
+    wl->ioseqlen = t_recnum;
+    uint64_t t_recnum_i;
+    for (t_recnum_i = 0; t_recnum_i < t_recnum; t_recnum_i++) {
+        fscanf(pfile, "%" PRId64 ",%" PRId64 ",%c", &t_offset, &t_size, &t_iotype);
+        // printf("%" PRIx64 ", %" PRIx64 ", %c", t_offset, t_size, t_iotype);
+        wl->ioseq[t_recnum_i].iotype = t_iotype;
+        wl->ioseq[t_recnum_i].offset = t_offset;
+        wl->ioseq[t_recnum_i].size = t_size;
+    }
+    fclose(pfile);
 
     if (fox_init_stats (gl_stats))
         goto EXIT_ENG;

@@ -127,6 +127,7 @@ struct fox_argp
     uint8_t     memcmp;
     uint8_t     output;
     uint32_t    engine;
+    char        inputiopath[CMDARG_LEN];  // used for engine 4/5, supporting arbitrary IO sequences!
 
     /* r/w/e parameters */
     uint8_t     io_ch;
@@ -188,6 +189,12 @@ struct fox_stats {
     pthread_mutex_t s_mutex;
 };
 
+struct fox_iounit {
+    char iotype; // 'r' for read and 'w' for write
+    uint64_t offset;
+    uint64_t size;
+};
+
 struct fox_workload {
     char                    *devname;
     uint8_t                 channels;
@@ -211,6 +218,9 @@ struct fox_workload {
     pthread_cond_t          start_con;
     pthread_mutex_t         monitor_mut;
     pthread_cond_t          monitor_con;
+    char*                   inputiopath;
+    struct fox_iounit*      ioseq;
+    uint64_t                ioseqlen;
 };
 
 struct fox_blkbuf {

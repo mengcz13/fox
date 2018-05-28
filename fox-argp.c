@@ -101,6 +101,7 @@ static struct argp_option opt_run[] = {
     "(3)real time average information"},
     {"engine", 'e', "<int>", 0, "I/O engine ID. (1)sequential, (2)round-robin,"
     " (3)isolation. Please check documentation for detailed information."},
+    {"inputiopath", 'i', "<char>", 0, "Path to the IO record file."},
     {0}
 };
 
@@ -241,6 +242,14 @@ static error_t parse_opt_run (int key, char *arg, struct argp_state *state)
             args->engine = atoi (arg);
             args->arg_num++;
             args->arg_flag |= CMDARG_FLAG_E;
+            break;
+        case 'i':
+            if (!arg)
+                strcpy(args->inputiopath, "input.csv");
+            else
+                strcpy(args->inputiopath, arg);
+            args->arg_num++;
+            // args->arg_flag |= CMDARG_FLAG_I;
             break;
         case ARGP_KEY_END:
         case ARGP_KEY_ARG:

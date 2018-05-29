@@ -64,6 +64,28 @@ int init_rewrite_meta(struct fox_node* node, struct rewrite_meta* meta) {
     meta->begin_pagebuf = (uint8_t*)calloc(vpg_sz, sizeof(uint8_t));
     meta->end_pagebuf = (uint8_t*)calloc(vpg_sz, sizeof(uint8_t));
     meta->pagebuf = (uint8_t*)calloc(vpg_sz, sizeof(uint8_t));
+    meta->heatmap = (struct fox_heatmap_unit*)calloc(meta->total_pagenum, sizeof(struct fox_heatmap_unit));
+
+    // read io sequence from file
+    FILE* pfile = fopen(node->wl->inputiopath, "r");
+    if (pfile == NULL)
+        return 1;
+    uint64_t t_offset, t_size, t_recnum;
+    char t_iotype;
+    if (fscanf(pfile, "%" PRId64, &t_recnum) == EOF)
+        return 1;
+    meta->ioseq = (struct fox_iounit*)calloc(t_recnum, sizeof(struct fox_iounit));
+    meta->ioseqlen = t_recnum;
+    uint64_t t_recnum_i;
+    for (t_recnum_i = 0; t_recnum_i < t_recnum; t_recnum_i++) {
+        fscanf(pfile, "%" PRId64 ",%" PRId64 ",%c", &t_offset, &t_size, &t_iotype);
+        meta->ioseq[t_recnum_i].iotype = t_iotype;
+        meta->ioseq[t_recnum_i].offset = t_offset;
+        meta->ioseq[t_recnum_i].size = t_size;
+        meta->ioseq[t_recnum_i].exetime = 0;
+    }
+    fclose(pfile);
+
     return 0;
 }
 
@@ -75,6 +97,8 @@ int free_rewrite_meta(struct rewrite_meta* meta) {
     free(meta->begin_pagebuf);
     free(meta->end_pagebuf);
     free(meta->pagebuf);
+    free(meta->ioseq);
+    free(meta->heatmap);
     return 0;
 }
 
@@ -97,6 +121,7 @@ int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* 
     uint64_t blk_i = geoaddr->blk_i;
     uint64_t pg_i = geoaddr->pg_i;
     uint64_t offset = geoaddr->offset_in_page;
+    uint64_t vpgofgeoaddr = geoaddr2vpg(node, geoaddr);
     fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
     size_t vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
     if (offset >= vpg_sz || offset + size > vpg_sz) {
@@ -106,6 +131,7 @@ int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* 
         if (fox_read_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
             return 1;
         }
+        meta->heatmap[vpgofgeoaddr].readt++;
         memcpy(databuf, blockbuf->buf_r + vpg_sz * pg_i + offset, size);
     } else if (mode == WRITE_MODE) {
         uint8_t* pgst = get_p_page_state(meta, geoaddr);
@@ -118,6 +144,7 @@ int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* 
             if (fox_write_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
                 return 1;
             }
+            meta->heatmap[vpgofgeoaddr].writet++;
         } else {
             /*
             if (fox_read_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
@@ -139,23 +166,6 @@ int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* 
     return 0;
 }
 
-int read_block(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr) {
-    uint64_t ch_i = geoaddr->ch_i;
-    uint64_t lun_i = geoaddr->lun_i;
-    uint64_t blk_i = geoaddr->blk_i;
-    fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
-    return fox_read_blk(&node->vblk_tgt, node, buf, node->npgs, 0);
-}
-
-int read_page(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr) { 
-    uint64_t ch_i = geoaddr->ch_i;
-    uint64_t lun_i = geoaddr->lun_i;
-    uint64_t blk_i = geoaddr->blk_i;
-    uint64_t pg_i = geoaddr->pg_i;
-    fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
-    return fox_read_blk(&node->vblk_tgt, node, buf, 1, pg_i);
-}
-
 int erase_block(struct fox_node* node, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr) {
     uint64_t ch_i = geoaddr->ch_i;
     uint64_t lun_i = geoaddr->lun_i;
@@ -167,6 +177,40 @@ int erase_block(struct fox_node* node, struct rewrite_meta* meta, struct nodegeo
     struct nodegeoaddr tgeo = *geoaddr;
     for (tgeo.pg_i = 0; tgeo.pg_i < node->npgs; tgeo.pg_i++) {
         *get_p_page_state(meta, &tgeo) = PAGE_CLEAN;
+        uint64_t vpgoftgeo = geoaddr2vpg(node, &tgeo);
+        meta->heatmap[vpgoftgeo].eraset++;
     }
+    return 0;
+}
+
+int write_meta_stats(struct rewrite_meta* meta) {
+    FILE *fp;
+    char filename[40];
+
+    // write heatmap
+    sprintf(filename, "heatmap_fox_io.csv");
+    fp = fopen(filename, "w");
+    uint64_t vpgi = 0;
+    for (vpgi = 0; vpgi < meta->total_pagenum; vpgi++) {
+        struct nodegeoaddr tgeo = vpg2geoaddr(meta->node, vpgi);
+        int blk = tgeo.blk_i;
+        int pg = tgeo.pg_i;
+        int ch = meta->node->ch[tgeo.ch_i];
+        int lu = meta->node->lun[tgeo.lun_i];
+        struct fox_heatmap_unit* hu = &meta->heatmap[vpgi];
+        fprintf(fp, "%d,%d,%d,%d,%" PRId64 ",%" PRId64 ",%" PRId64 "\n", ch, lu, blk, pg, hu->readt, hu->writet, hu->eraset);
+    }
+    fclose(fp);
+
+    // write io time
+    sprintf(filename, "iotime_fox_io.csv");
+    fp = fopen(filename, "w");
+    uint64_t io_i = 0;
+    for (io_i = 0; io_i < meta->ioseqlen; io_i++) {
+        struct fox_iounit* ioseqi = &meta->ioseq[io_i];
+        fprintf(fp, "%" PRId64 ",%" PRId64 ",%c,%" PRId64 "\n", ioseqi->offset, ioseqi->size, ioseqi->iotype, ioseqi->exetime);
+    }
+    fclose(fp);
+
     return 0;
 }

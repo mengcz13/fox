@@ -3,4 +3,6 @@ cscope
 tags
 *.o
 fox
-input.csv*
+*.csv
+*.backup
+/output/

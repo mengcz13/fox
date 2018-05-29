@@ -37,6 +37,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include "../fox.h"
 #include "fox-rewrite-utils.h"
 
@@ -355,48 +356,37 @@ static int rewrite_ls_start (struct fox_node *node)
     if (fox_alloc_blk_buf (node, &nbuf))
         goto OUT;
 
-    /*
-    uint64_t iosize_single = 524288;
-    uint64_t iosize = 4 * iosize_single;
-    uint64_t offset_i = 0;
-    */
-    uint64_t max_iosize = 0;
-    uint64_t t = 0;
-    for (t = 0; t < node->wl->ioseqlen; t++) {
-        if (node->wl->ioseq[t].size > max_iosize)
-            max_iosize = node->wl->ioseq[t].size;
-    }
-    uint8_t* databuf = (uint8_t*)calloc(max_iosize, sizeof(uint8_t));
     struct rewrite_meta meta;
     init_rewrite_meta(node, &meta);
     struct ls_meta lm;
     init_ls_meta(&meta, &nbuf, &lm);
 
+    uint64_t max_iosize = 0;
+    uint64_t t = 0;
+    for (t = 0; t < meta.ioseqlen; t++) {
+        if (meta.ioseq[t].size > max_iosize)
+            max_iosize = meta.ioseq[t].size;
+    }
+    uint8_t* databuf = (uint8_t*)calloc(max_iosize, sizeof(uint8_t));
+    struct timeval tvalst, tvaled;
+
     fox_start_node (node);
 
-    for (t = 0; t < node->wl->ioseqlen; t++) {
+    for (t = 0; t < meta.ioseqlen; t++) {
         int mode;
-        if (node->wl->ioseq[t].iotype == 'r')
+        if (meta.ioseq[t].iotype == 'r')
             mode = READ_MODE;
-        else if (node->wl->ioseq[t].iotype == 'w')
+        else if (meta.ioseq[t].iotype == 'w')
             mode = WRITE_MODE;
-        // printf("%" PRIx64 ",%" PRIx64 ",%d\n", node->wl->ioseq[t].offset, node->wl->ioseq[t].size, mode);
-        iterate_ls_io(node, &nbuf, &meta, &lm, databuf, node->wl->ioseq[t].offset, node->wl->ioseq[t].size, mode);
+
+        gettimeofday(&tvalst, NULL);
+        iterate_ls_io(node, &nbuf, &meta, &lm, databuf, meta.ioseq[t].offset, meta.ioseq[t].size, mode);
+        gettimeofday(&tvaled, NULL);
+        meta.ioseq[t].exetime = ((uint64_t)(tvaled.tv_sec - tvalst.tv_sec) * 1000000L + tvaled.tv_usec) - tvalst.tv_usec;
     }
-    /*
-    do {
-BREAK:
-        if ((node->wl->stats->flags & FOX_FLAG_DONE) || !node->wl->runtime ||
-                                                   node->stats.progress >= 100)
-            break;
-
-        if (node->wl->w_factor != 0)
-            if (fox_erase_all_vblks (node))
-                break;
-
-    } while (1);
-    */
     fox_end_node (node);
+
+    write_meta_stats(&meta);
 
     fox_free_blkbuf (&nbuf, 1);
     free(databuf);

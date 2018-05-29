@@ -35,6 +35,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include "../fox.h"
 #include "fox-rewrite-utils.h"
 
@@ -84,7 +85,7 @@ static int iterate_inplace_io(struct fox_node* node, struct fox_blkbuf* buf, str
                         meta->temp_page_state_inblk[tgeo.pg_i] = *get_p_page_state(meta, &tgeo);
                         if (tgeo.pg_i < begin_pgi_inblk || tgeo.pg_i > end_pgi_inblk) {
                             if (meta->temp_page_state_inblk[tgeo.pg_i] == PAGE_DIRTY) {
-                                read_page(node, buf, &tgeo);
+                                rw_inside_page(node, buf, buf->buf_r + tgeo.pg_i * vpg_sz, meta, &tgeo, vpg_sz, READ_MODE);
                             }
                         }
                     }
@@ -171,42 +172,37 @@ static int rewrite_inplace_start (struct fox_node *node)
     if (fox_alloc_blk_buf (node, &nbuf))
         goto OUT;
 
-    uint64_t max_iosize = 0;
-    uint64_t t = 0;
-    for (t = 0; t < node->wl->ioseqlen; t++) {
-        if (node->wl->ioseq[t].size > max_iosize)
-            max_iosize = node->wl->ioseq[t].size;
-    }
-    uint8_t* databuf = (uint8_t*)calloc(max_iosize, sizeof(uint8_t));
     struct rewrite_meta meta;
     init_rewrite_meta(node, &meta);
+    
+    uint64_t max_iosize = 0;
+    uint64_t t = 0;
+    for (t = 0; t < meta.ioseqlen; t++) {
+        if (meta.ioseq[t].size > max_iosize)
+            max_iosize = meta.ioseq[t].size;
+    }
+    uint8_t* databuf = (uint8_t*)calloc(max_iosize, sizeof(uint8_t));
+    struct timeval tvalst, tvaled;
 
     fox_start_node (node);
 
-    for (t = 0; t < node->wl->ioseqlen; t++) {
+    for (t = 0; t < meta.ioseqlen; t++) {
         if (t % 100 == 0)
-            printf("%d/%d\n", t + 1, node->wl->ioseqlen);
+            printf("%d/%d\n", t + 1, meta.ioseqlen);
         int mode;
-        if (node->wl->ioseq[t].iotype == 'r')
+        if (meta.ioseq[t].iotype == 'r')
             mode = READ_MODE;
-        else if (node->wl->ioseq[t].iotype == 'w')
+        else if (meta.ioseq[t].iotype == 'w')
             mode = WRITE_MODE;
-        iterate_inplace_io(node, &nbuf, &meta, databuf, node->wl->ioseq[t].offset, node->wl->ioseq[t].size, mode);
+
+        gettimeofday(&tvalst, NULL);
+        iterate_inplace_io(node, &nbuf, &meta, databuf, meta.ioseq[t].offset, meta.ioseq[t].size, mode);
+        gettimeofday(&tvaled, NULL);
+        meta.ioseq[t].exetime = ((uint64_t)(tvaled.tv_sec - tvalst.tv_sec) * 1000000L + tvaled.tv_usec) - tvalst.tv_usec;
     }
-    /*
-    do {
-BREAK:
-        if ((node->wl->stats->flags & FOX_FLAG_DONE) || !node->wl->runtime ||
-                                                   node->stats.progress >= 100)
-            break;
-
-        if (node->wl->w_factor != 0)
-            if (fox_erase_all_vblks (node))
-                break;
-
-    } while (1);
-    */
     fox_end_node (node);
+
+    write_meta_stats(&meta);
 
     fox_free_blkbuf (&nbuf, 1);
     free(databuf);

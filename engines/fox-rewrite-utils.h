@@ -27,6 +27,19 @@ struct nodegeoaddr {
     uint64_t pg_i;
 };
 
+struct fox_iounit {
+    char iotype; // 'r' for read and 'w' for write
+    uint64_t offset;
+    uint64_t size;
+    uint64_t exetime;
+};
+
+struct fox_heatmap_unit {
+    uint64_t readt;
+    uint64_t writet;
+    uint64_t eraset;
+};
+
 struct rewrite_meta {
     struct fox_node* node;
     uint64_t total_pagenum;
@@ -37,6 +50,9 @@ struct rewrite_meta {
     uint8_t* begin_pagebuf;
     uint8_t* end_pagebuf;
     uint8_t* pagebuf;
+    struct fox_iounit* ioseq;
+    uint64_t ioseqlen;
+    struct fox_heatmap_unit* heatmap;
 };
 
 uint64_t geoaddr2vpg(struct fox_node* node, struct nodegeoaddr* geoaddr);
@@ -59,10 +75,8 @@ int set_nodegeoaddr(struct fox_node* node, struct nodegeoaddr* baddr, uint64_t l
 
 int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr, uint64_t size, int mode);
 
-int read_block(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr);
-
-int read_page(struct fox_node* node, struct fox_blkbuf* buf, struct nodegeoaddr* geoaddr);
-
 int erase_block(struct fox_node* node, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr);
+
+int write_meta_stats(struct rewrite_meta* meta);
 
 #endif

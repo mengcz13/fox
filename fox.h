@@ -189,12 +189,6 @@ struct fox_stats {
     pthread_mutex_t s_mutex;
 };
 
-struct fox_iounit {
-    char iotype; // 'r' for read and 'w' for write
-    uint64_t offset;
-    uint64_t size;
-};
-
 struct fox_workload {
     char                    *devname;
     uint8_t                 channels;
@@ -219,8 +213,6 @@ struct fox_workload {
     pthread_mutex_t         monitor_mut;
     pthread_cond_t          monitor_con;
     char*                   inputiopath;
-    struct fox_iounit*      ioseq;
-    uint64_t                ioseqlen;
 };
 
 struct fox_blkbuf {

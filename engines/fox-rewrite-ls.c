@@ -382,7 +382,17 @@ static int rewrite_ls_start (struct fox_node *node)
         gettimeofday(&tvalst, NULL);
         iterate_ls_io(node, &nbuf, &meta, &lm, databuf, meta.ioseq[t].offset, meta.ioseq[t].size, mode);
         gettimeofday(&tvaled, NULL);
+        // record time
         meta.ioseq[t].exetime = ((uint64_t)(tvaled.tv_sec - tvalst.tv_sec) * 1000000L + tvaled.tv_usec) - tvalst.tv_usec;
+        // record benefit / cost
+        struct nodegeoaddr used_begin_geoaddr = vpg2geoaddr(node, lm.used_begin_ppg);
+        struct nodegeoaddr used_end_geoaddr = vpg2geoaddr(node, (lm.used_end_ppg + meta.total_pagenum - 1) % meta.total_pagenum);
+        int nclblk = (used_end_geoaddr.blk_i >= used_begin_geoaddr.blk_i) ? (used_end_geoaddr.blk_i - used_begin_geoaddr.blk_i + 1) : (node->nblks - (used_begin_geoaddr.blk_i - used_end_geoaddr.blk_i - 1));
+        nclblk = nclblk * node->nchs * node->nluns;
+        meta.ioseq[t].gc_becost = (double)(lm.abandoned_pg_count) / (5 * nclblk + lm.dirty_pg_count);
+        meta.ioseq[t].nabandoned = lm.abandoned_pg_count;
+        meta.ioseq[t].ndirty = lm.dirty_pg_count;
+        meta.ioseq[t].nblock = nclblk;
     }
     fox_end_node (node);
 

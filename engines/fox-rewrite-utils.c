@@ -83,6 +83,10 @@ int init_rewrite_meta(struct fox_node* node, struct rewrite_meta* meta) {
         meta->ioseq[t_recnum_i].offset = t_offset;
         meta->ioseq[t_recnum_i].size = t_size;
         meta->ioseq[t_recnum_i].exetime = 0;
+        meta->ioseq[t_recnum_i].gc_becost = 0;
+        meta->ioseq[t_recnum_i].nabandoned = 0;
+        meta->ioseq[t_recnum_i].ndirty = 0;
+        meta->ioseq[t_recnum_i].nblock = 0;
     }
     fclose(pfile);
 
@@ -208,7 +212,7 @@ int write_meta_stats(struct rewrite_meta* meta) {
     uint64_t io_i = 0;
     for (io_i = 0; io_i < meta->ioseqlen; io_i++) {
         struct fox_iounit* ioseqi = &meta->ioseq[io_i];
-        fprintf(fp, "%" PRId64 ",%" PRId64 ",%c,%" PRId64 "\n", ioseqi->offset, ioseqi->size, ioseqi->iotype, ioseqi->exetime);
+        fprintf(fp, "%" PRId64 ",%" PRId64 ",%c,%" PRId64 ",%d,%d,%d,%lf\n", ioseqi->offset, ioseqi->size, ioseqi->iotype, ioseqi->exetime, ioseqi->nabandoned, ioseqi->ndirty, ioseqi->nblock, ioseqi->gc_becost);
     }
     fclose(fp);
 

@@ -32,6 +32,10 @@ struct fox_iounit {
     uint64_t offset;
     uint64_t size;
     uint64_t exetime;
+    double gc_becost; // benefit / cost factor for gc
+    int nabandoned;
+    int ndirty;
+    int nblock;
 };
 
 struct fox_heatmap_unit {

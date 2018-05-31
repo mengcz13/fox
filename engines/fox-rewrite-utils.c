@@ -45,6 +45,16 @@ struct nodegeoaddr vblk2geoaddr(struct fox_node* node, uint64_t vblk_i) {
     return geoaddr;
 }
 
+uint64_t vpg2vblk(struct fox_node* node, uint64_t vpg_i) {
+    struct nodegeoaddr tgeo = vpg2geoaddr(node, vpg_i);
+    return geoaddr2vblk(node, &tgeo);
+}
+
+uint64_t vblk2vpg(struct fox_node* node, uint64_t vblk_i) {
+    struct nodegeoaddr tgeo = vblk2geoaddr(node, vblk_i);
+    return geoaddr2vpg(node, &tgeo);
+}
+
 uint8_t* get_p_page_state(struct rewrite_meta* meta, struct nodegeoaddr* geoaddr) {
     return &(meta->page_state[geoaddr2vpg(meta->node, geoaddr)]);
 }

@@ -67,6 +67,10 @@ struct nodegeoaddr vpg2geoaddr(struct fox_node* node, uint64_t vpg_i);
 
 struct nodegeoaddr vblk2geoaddr(struct fox_node* node, uint64_t vblk_i);
 
+uint64_t vpg2vblk(struct fox_node* node, uint64_t vpg_i);
+
+uint64_t vblk2vpg(struct fox_node* node, uint64_t vblk_i);
+
 uint8_t* get_p_page_state(struct rewrite_meta* meta, struct nodegeoaddr* geoaddr);
 
 uint8_t* get_p_blk_state(struct rewrite_meta* meta, struct nodegeoaddr* geoaddr);

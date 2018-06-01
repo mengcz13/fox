@@ -271,6 +271,7 @@ static uint64_t allocate_page(struct ls_meta* lm, uint64_t vpg_i) {
        //  printf("Impossible after GC!\n");
         return lm->meta->total_pagenum;
     } else {
+        lm->next_ch_lun_i = (lm->next_ch_lun_i + 1) % (node->nchs * node->nluns);
         struct blk_entry* act = listi->active_blk;
         struct nodegeoaddr tgeo = vblk2geoaddr(node, act->pblk_i);
         tgeo.offset_in_page = 0;

@@ -129,6 +129,21 @@ int set_nodegeoaddr(struct fox_node* node, struct nodegeoaddr* baddr, uint64_t l
     return 0;
 }
 
+struct fox_tgt_blk copy_vblk_tgt(struct fox_node* node, uint16_t chid, uint16_t lunid, uint32_t blkid) {
+    int boff;
+    struct fox_workload *wl = node->wl;
+    struct fox_tgt_blk res;
+
+    boff = fox_vblk_get_pblk (wl, chid, lunid, blkid);
+
+    res.vblk = wl->vblks[boff];
+    res.ch = chid;
+    res.lun = lunid;
+    res.blk = blkid;
+
+    return res;
+} 
+
 int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr, uint64_t size, int mode) {
     uint64_t ch_i = geoaddr->ch_i;
     uint64_t lun_i = geoaddr->lun_i;
@@ -136,15 +151,17 @@ int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* 
     uint64_t pg_i = geoaddr->pg_i;
     uint64_t offset = geoaddr->offset_in_page;
     uint64_t vpgofgeoaddr = geoaddr2vpg(node, geoaddr);
-    fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
+    // fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
+    struct fox_tgt_blk tgt = copy_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
     size_t vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
     if (offset >= vpg_sz || offset + size > vpg_sz) {
         return 1;
     }
     if (mode == READ_MODE) {
-        if (fox_read_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
+        /*if (fox_read_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
             return 1;
-        }
+        }*/
+        prov_vblk_pread(tgt.vblk, blockbuf->buf_r + vpg_sz * pg_i, vpg_sz, vpg_sz * pg_i);
         meta->heatmap[vpgofgeoaddr].readt++;
         memcpy(databuf, blockbuf->buf_r + vpg_sz * pg_i + offset, size);
     } else if (mode == WRITE_MODE) {
@@ -155,21 +172,12 @@ int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* 
             return 1;
         } else if (offset == 0 && size == vpg_sz) {
             memcpy(blockbuf->buf_w + vpg_sz * pg_i, databuf, size);
-            if (fox_write_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
+            /*if (fox_write_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
                 return 1;
-            }
+            }*/
+            prov_vblk_pwrite(tgt.vblk, blockbuf->buf_w + vpg_sz * pg_i, vpg_sz, vpg_sz * pg_i);
             meta->heatmap[vpgofgeoaddr].writet++;
         } else {
-            /*
-            if (fox_read_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
-                return 1;
-            }
-            memcpy(blockbuf->buf_w + vpg_sz * pg_i, blockbuf->buf_r + vpg_sz * pg_i, vpg_sz);
-            memcpy(blockbuf->buf_w + vpg_sz * pg_i + offset, databuf, size);
-            if (fox_write_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
-                return 1;
-            }
-            */
             // cannot rewrite before erasing!
             return 1;
         }
@@ -184,9 +192,11 @@ int erase_block(struct fox_node* node, struct rewrite_meta* meta, struct nodegeo
     uint64_t ch_i = geoaddr->ch_i;
     uint64_t lun_i = geoaddr->lun_i;
     uint64_t blk_i = geoaddr->blk_i;
-    fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
-    if (fox_erase_blk(&node->vblk_tgt, node))
-        return 1;
+    // fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
+    struct fox_tgt_blk tgt = copy_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
+    /*if (fox_erase_blk(&node->vblk_tgt, node))
+        return 1;*/
+    prov_vblk_erase(tgt.vblk);
     *get_p_blk_state(meta, geoaddr) = BLOCK_CLEAN;
     struct nodegeoaddr tgeo = *geoaddr;
     for (tgeo.pg_i = 0; tgeo.pg_i < node->npgs; tgeo.pg_i++) {

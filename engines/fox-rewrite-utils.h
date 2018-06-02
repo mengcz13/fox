@@ -81,6 +81,8 @@ int free_rewrite_meta(struct rewrite_meta* meta);
 
 int set_nodegeoaddr(struct fox_node* node, struct nodegeoaddr* baddr, uint64_t lbyte_addr);
 
+struct fox_tgt_blk copy_vblk_tgt(struct fox_node* node, uint16_t chid, uint16_t lunid, uint32_t blkid);
+
 int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr, uint64_t size, int mode);
 
 int erase_block(struct fox_node* node, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr);

@@ -15,6 +15,7 @@ OBJ += engines/fox-rewrite-utils.o
 OBJ += engines/fox-rewrite-inplace.o
 OBJ += engines/fox-rewrite-ls.o
 OBJ += engines/fox-rewrite-ls-greedy.o
+OBJ += engines/fox-rewrite-ls-sb.o
 CC = gcc
 CFLAGS = -g -Wall
 CFLAGSXX =

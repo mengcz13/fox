@@ -44,6 +44,7 @@
 #define FOX_ENGINE_4  0x4 /* Rewrite-inplace Sequence */
 #define FOX_ENGINE_5  0x5 /* Rewrite-ls */
 #define FOX_ENGINE_6  0x6 /* Rewrite-ls, greedy GC */
+#define FOX_ENGINE_7  0x7 /* Superblock */
 
 #define PROV_NBLK_PER_VBLK 0x1
 
@@ -420,6 +421,7 @@ int                  foxeng_iso_init (struct fox_workload *);
 int                  foxeng_rewrite_inplace_init (struct fox_workload *);
 int                  foxeng_rewrite_ls_init(struct fox_workload *);
 int                  foxeng_rewrite_ls_greedy_init(struct fox_workload *);
+int                  foxeng_rewrite_ls_sb_init(struct fox_workload *);
 
 /* provisioning */
 int     prov_init(struct nvm_dev *dev, const struct nvm_geo *geo);

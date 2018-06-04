@@ -181,16 +181,18 @@ static int rewrite_inplace_start (struct fox_node *node)
         if (meta.ioseq[t].size > max_iosize)
             max_iosize = meta.ioseq[t].size;
     }
-    uint8_t* databuf = (uint8_t*)calloc(max_iosize, sizeof(uint8_t));
+    //uint8_t* databuf = (uint8_t*)calloc(max_iosize, sizeof(uint8_t));
+    uint8_t* databuf = (uint8_t*)calloc(64 * meta.vpg_sz, sizeof(uint8_t));
     struct timeval tvalst, tvaled;
 
     fox_start_node (node);
 
-    for (t = 0; t < meta.ioseqlen; t++) {
+    /*for (t = 0; t < meta.ioseqlen; t++) {
         if (t % 100 == 0)
             printf("%d/%d\n", t + 1, meta.ioseqlen);
         int mode;
         if (meta.ioseq[t].iotype == 'r')
+        struct nodegeoaddr tempga;
             mode = READ_MODE;
         else if (meta.ioseq[t].iotype == 'w')
             mode = WRITE_MODE;
@@ -199,8 +201,52 @@ static int rewrite_inplace_start (struct fox_node *node)
         iterate_inplace_io(node, &nbuf, &meta, databuf, meta.ioseq[t].offset, meta.ioseq[t].size, mode);
         gettimeofday(&tvaled, NULL);
         meta.ioseq[t].exetime = ((uint64_t)(tvaled.tv_sec - tvalst.tv_sec) * 1000000L + tvaled.tv_usec) - tvalst.tv_usec;
+    }*/
+
+
+    gettimeofday(&tvalst, NULL);
+    int times = 0;
+    for (times = 0; times < 100000; times++) {
+    /*struct nodegeoaddr tempga;
+    int lun_i = 0;
+    int blk_i = 0;
+    int pg_i = 0;
+    for (blk_i = 0; blk_i < 1; blk_i++) {
+    for (pg_i = 0; pg_i < 16;  pg_i++) {
+        tempga.lun_i = lun_i;
+        tempga.blk_i = blk_i;
+        tempga.pg_i = pg_i;
+        tempga.ch_i = 0;
+        tempga.offset_in_page = 0;
+        rw_inside_page(node, &nbuf, databuf, &meta, &tempga, meta.vpg_sz, WRITE_MODE);
     }
+    }*/
+    
+    int bp = 0;
+    #pragma omp parallel for num_threads(4) schedule(static,1)
+    for (bp = 0; bp < 16; bp++) {
+        int lun_i = bp % 4;
+        int pg_i = (bp / 4) % 64;
+        int blk_i = bp / (4 * 64) % 4;
+        
+        /*int pg_i = bp % 64;
+        int blk_i = bp / 64 % 4;
+        int lun_i = bp / 64 / 4 % 4;*/
+        //printf("%d,%d,%d\n", lun_i, blk_i, pg_i);
+        struct nodegeoaddr tempga;
+        tempga.ch_i = 0;
+        tempga.lun_i = lun_i;
+        tempga.blk_i = blk_i;
+        tempga.pg_i = pg_i;
+        tempga.offset_in_page = 0;
+        rw_inside_page(node, &nbuf, databuf, &meta, &tempga, meta.vpg_sz, WRITE_MODE);
+    }
+    }
+    gettimeofday(&tvaled, NULL);
+    uint64_t exetime = ((uint64_t)(tvaled.tv_sec - tvalst.tv_sec) * 1000000L + tvaled.tv_usec) - tvalst.tv_usec;
+
     fox_end_node (node);
+    printf("exetime: %" PRId64 "\n", exetime);
 
     write_meta_stats(&meta);
 

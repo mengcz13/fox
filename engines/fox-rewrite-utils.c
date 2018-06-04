@@ -167,9 +167,9 @@ int rw_inside_page(struct fox_node* node, struct fox_blkbuf* blockbuf, uint8_t* 
     } else if (mode == WRITE_MODE) {
         uint8_t* pgst = get_p_page_state(meta, geoaddr);
         if (*pgst == PAGE_DIRTY) {
-            printf("Writing to dirty page!\n");
+            /*printf("Writing to dirty page!\n");
             printf("%" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %d\n", ch_i, lun_i, blk_i, pg_i, offset, mode);
-            return 1;
+            return 1;*/
         } else if (offset == 0 && size == vpg_sz) {
             memcpy(blockbuf->buf_w + vpg_sz * pg_i, databuf, size);
             /*if (fox_write_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {

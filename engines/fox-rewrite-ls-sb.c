@@ -122,9 +122,34 @@ static uint64_t sblkaddr2sblki(struct ls_meta* lm, struct sblkaddr* sblka) {
     return sblka->outer_pu_i + sblka->outer_blk_i * (node->nchs * node->nluns / lm->sblk_npus);
 }
 
+static struct sblkaddr vpgi2sblkaddr(struct ls_meta* lm, uint64_t vpgi) {
+    uint64_t w_ui = lm->sblk_npus;
+    uint64_t w_pgs = lm->meta->node->npgs * w_ui;
+    uint64_t w_bi = lm->sblk_nblks * w_pgs;
+    uint64_t w_uo = (lm->meta->node->nchs * lm->meta->node->nluns / lm->sblk_npus) * w_bi;
+    uint64_t w_bo = (lm->meta->node->nblks / lm->sblk_nblks) * w_uo;
+    struct sblkaddr res;
+    res.offset_in_page = 0;
+    res.inner_pu_i = vpgi % w_ui;
+    res.pg_i = vpgi / w_ui % (w_pgs / w_ui);
+    res.inner_blk_i = vpgi / w_pgs % (w_bi / w_pgs);
+    res.outer_pu_i = vpgi / w_bi % (w_uo / w_bi);
+    res.outer_blk_i = vpgi / w_uo % (w_bo / w_uo);
+    return res;
+}
+
+static uint64_t sblkaddr2vpgi(struct ls_meta* lm, struct sblkaddr* sblka) {
+    uint64_t w_ui = lm->sblk_npus;
+    uint64_t w_pgs = lm->meta->node->npgs * w_ui;
+    uint64_t w_bi = lm->sblk_nblks * w_pgs;
+    uint64_t w_uo = (lm->meta->node->nchs * lm->meta->node->nluns / lm->sblk_npus) * w_bi;
+    // uint64_t w_bo = (lm->meta->node->nblks / lm->sblk_nblks) * w_uo;
+
+    return sblka->inner_pu_i + sblka->pg_i * w_ui + sblka->inner_blk_i * w_pgs + sblka->outer_pu_i * w_bi + sblka->outer_blk_i * w_uo;
+}
+
 static uint64_t vpgi2sblki(struct ls_meta* lm, uint64_t vpgi) {
-    struct nodegeoaddr geoaddr = vpg2geoaddr(lm->meta->node, vpgi);
-    struct sblkaddr temp = geoaddr2sblkaddr(lm, &geoaddr);
+    struct sblkaddr temp = vpgi2sblkaddr(lm, vpgi);
     return sblkaddr2sblki(lm, &temp);
 }
 
@@ -138,6 +163,16 @@ static struct sblkaddr sblki2sblkaddr(struct ls_meta* lm, uint64_t sblki) {
     res.inner_blk_i = 0;
     res.outer_blk_i = sblki / npuspblk;
     return res;
+}
+
+static struct nodegeoaddr vpg2geoaddr_sb(struct ls_meta* lm, uint64_t vpgi) {
+    struct sblkaddr temp = vpgi2sblkaddr(lm, vpgi);
+    return sblkaddr2geoaddr(lm, &temp);
+}
+
+static uint64_t geoaddr2vpg_sb(struct ls_meta* lm, struct nodegeoaddr* geoaddr) {
+    struct sblkaddr temp = geoaddr2sblkaddr(lm, geoaddr);
+    return sblkaddr2vpgi(lm, &temp);
 }
 
 static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, struct ls_meta* lm) {
@@ -210,7 +245,6 @@ static uint64_t psblk2vsblk(struct ls_meta* lm, uint64_t psbi) {
 
 static struct nodegeoaddr vaddr2paddr(struct ls_meta* lm, struct nodegeoaddr* vaddr) {
     // convert superblock only, keep others
-    struct fox_node* node = lm->meta->node;
     struct sblkaddr vsblkaddr = geoaddr2sblkaddr(lm, vaddr);
     uint64_t vsblki = sblkaddr2sblki(lm, &vsblkaddr);
     uint64_t psblki = vsblk2psblk(lm, vsblki);
@@ -224,9 +258,9 @@ static struct nodegeoaddr vaddr2paddr(struct ls_meta* lm, struct nodegeoaddr* va
 }
 
 static uint64_t vpg2ppg(struct ls_meta* lm, uint64_t vpg) {
-    struct nodegeoaddr vaddr = vpg2geoaddr(lm->meta->node, vpg);
+    struct nodegeoaddr vaddr = vpg2geoaddr_sb(lm, vpg);
     struct nodegeoaddr paddr = vaddr2paddr(lm, &vaddr);
-    return geoaddr2vpg(lm->meta->node, &paddr);
+    return geoaddr2vpg_sb(lm, &paddr);
 }
 
 static int isalloc_sbi(struct ls_meta* lm, uint64_t vsbi) {
@@ -248,6 +282,66 @@ static int isalloc(struct ls_meta* lm, uint64_t vpgi) {
         else
             return 1;
     }
+}
+
+static int rw_inside_page_sb(struct ls_meta* lm, struct fox_blkbuf* blockbuf, uint8_t* databuf, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr, uint64_t size, int mode) {
+    struct fox_node* node = lm->meta->node;
+    uint64_t ch_i = geoaddr->ch_i;
+    uint64_t lun_i = geoaddr->lun_i;
+    uint64_t blk_i = geoaddr->blk_i;
+    uint64_t pg_i = geoaddr->pg_i;
+    uint64_t offset = geoaddr->offset_in_page;
+    uint64_t vpgofgeoaddr = geoaddr2vpg_sb(lm, geoaddr);
+    fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
+    size_t vpg_sz = node->wl->geo->page_nbytes * node->wl->geo->nplanes;
+    if (offset >= vpg_sz || offset + size > vpg_sz) {
+        return 1;
+    }
+    if (mode == READ_MODE) {
+        if (fox_read_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
+            return 1;
+        }
+        meta->heatmap[vpgofgeoaddr].readt++;
+        memcpy(databuf, blockbuf->buf_r + vpg_sz * pg_i + offset, size);
+    } else if (mode == WRITE_MODE) {
+        uint8_t* pgst = &(meta->page_state[vpgofgeoaddr]);
+        if (*pgst == PAGE_DIRTY) {
+            printf("Writing to dirty page!\n");
+            printf("%" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %d\n", ch_i, lun_i, blk_i, pg_i, offset, mode);
+            return 1;
+        } else if (offset == 0 && size == vpg_sz) {
+            memcpy(blockbuf->buf_w + vpg_sz * pg_i, databuf, size);
+            if (fox_write_blk(&node->vblk_tgt, node, blockbuf, 1, pg_i)) {
+                return 1;
+            }
+            meta->heatmap[vpgofgeoaddr].writet++;
+        } else {
+            // cannot rewrite before erasing!
+            return 1;
+        }
+        *pgst = PAGE_DIRTY;
+        uint8_t* blkst = get_p_blk_state(meta, geoaddr);
+        *blkst = BLOCK_DIRTY;
+    }
+    return 0;
+}
+
+static int erase_block_sb(struct ls_meta* lm, struct rewrite_meta* meta, struct nodegeoaddr* geoaddr) {
+    struct fox_node* node = lm->meta->node;
+    uint64_t ch_i = geoaddr->ch_i;
+    uint64_t lun_i = geoaddr->lun_i;
+    uint64_t blk_i = geoaddr->blk_i;
+    fox_vblk_tgt(node, node->ch[ch_i], node->lun[lun_i], blk_i);
+    if (fox_erase_blk(&node->vblk_tgt, node))
+        return 1;
+    *get_p_blk_state(meta, geoaddr) = BLOCK_CLEAN;
+    struct nodegeoaddr tgeo = *geoaddr;
+    for (tgeo.pg_i = 0; tgeo.pg_i < node->npgs; tgeo.pg_i++) {
+        uint64_t vpgoftgeo = geoaddr2vpg_sb(lm, &tgeo);
+        meta->page_state[vpgoftgeo] = PAGE_CLEAN;
+        meta->heatmap[vpgoftgeo].eraset++;
+    }
+    return 0;
 }
 
 static int erase_sb(struct ls_meta* lm, uint64_t psblki);
@@ -303,7 +397,7 @@ static int erase_sb(struct ls_meta* lm, uint64_t psblki) {
             ta.pg_i = 0;
             struct nodegeoaddr spgeo = sblkaddr2geoaddr(lm, &ta);
             if (*get_p_blk_state(lm->meta, &spgeo) == BLOCK_DIRTY) {
-                erase_block(lm->meta->node, lm->meta, &spgeo);
+                erase_block_sb(lm, lm->meta, &spgeo);
             }
         }
     }
@@ -315,7 +409,6 @@ static int realloc_sb(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_e
     // process superblock-wise
     uint64_t vpg_sbfst = vpg_i_begin;
     uint64_t vpg_sblst = vpg_i_begin;
-    struct fox_node* node = lm->meta->node;
     while (vpg_sbfst <= vpg_i_end && vpg_sblst <= vpg_i_end) {
         uint64_t csblki = vpgi2sblki(lm, vpg_sbfst);
         while (vpg_sblst <= vpg_i_end && vpgi2sblki(lm,vpg_sblst) == csblki)
@@ -350,11 +443,11 @@ static int realloc_sb(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_e
                             ta.inner_pu_i = inner_pui;
                             ta.pg_i = pgi;
                             struct nodegeoaddr spgeo = sblkaddr2geoaddr(lm, &ta);
-                            uint64_t ppg_i = geoaddr2vpg(lm->meta->node, &spgeo);
+                            uint64_t ppg_i = geoaddr2vpg_sb(lm, &spgeo);
                             uint64_t innerpg = ta.inner_blk_i * lm->sblk_npus * lm->meta->node->npgs + ta.pg_i * lm->sblk_npus + ta.inner_pu_i;
                             if (lm->meta->page_state[ppg_i] == PAGE_DIRTY) {
                                 lm->sblkvpgs[dpcount] = innerpg;
-                                rw_inside_page(node, lm->blockbuf, lm->sblkbuf + dpcount * lm->meta->vpg_sz, lm->meta, &spgeo, lm->meta->vpg_sz, READ_MODE);
+                                rw_inside_page_sb(lm, lm->blockbuf, lm->sblkbuf + dpcount * lm->meta->vpg_sz, lm->meta, &spgeo, lm->meta->vpg_sz, READ_MODE);
                                 dpcount++;
                             }
                         }
@@ -372,7 +465,7 @@ static int realloc_sb(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_e
                         ta.inner_pu_i = innerpg % lm->sblk_npus;
                         ta.offset_in_page = 0;
                         struct nodegeoaddr spgeo = sblkaddr2geoaddr(lm, &ta);
-                        rw_inside_page(node, lm->blockbuf, lm->sblkbuf + dpi * lm->meta->vpg_sz, lm->meta, &spgeo, lm->meta->vpg_sz, WRITE_MODE);
+                        rw_inside_page_sb(lm, lm->blockbuf, lm->sblkbuf + dpi * lm->meta->vpg_sz, lm->meta, &spgeo, lm->meta->vpg_sz, WRITE_MODE);
                     }
                     uint64_t oldndpgs = lm->sblk_metas[psblki].ndirtypgs;
                     lm->sblk_metas[psblki].ndirtypgs = dpcount + vpgnum;
@@ -390,7 +483,7 @@ static int realloc_sb(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_e
                         ta.inner_pu_i = innerpg % lm->sblk_npus;
                         ta.offset_in_page = 0;
                         struct nodegeoaddr spgeo = sblkaddr2geoaddr(lm, &ta);
-                        rw_inside_page(node, lm->blockbuf, lm->sblkbuf + dpi * lm->meta->vpg_sz, lm->meta, &spgeo, lm->meta->vpg_sz, WRITE_MODE);
+                        rw_inside_page_sb(lm, lm->blockbuf, lm->sblkbuf + dpi * lm->meta->vpg_sz, lm->meta, &spgeo, lm->meta->vpg_sz, WRITE_MODE);
                     }
                     uint64_t oldndpgs = lm->sblk_metas[psblki].ndirtypgs;
                     lm->sblk_metas[newpsblki].ndirtypgs = dpcount + vpgnum;
@@ -434,42 +527,42 @@ static int iterate_ls_io(struct fox_node* node, struct fox_blkbuf* buf, struct r
     uint64_t vpg_i_end = (offset + size - 1) / vpg_sz;
 
     if (mode == READ_MODE) {
-        struct nodegeoaddr vpg_geo_end = vpg2geoaddr(node, vpg_i_end);
+        struct nodegeoaddr vpg_geo_end = vpg2geoaddr_sb(lm, vpg_i_end);
         struct nodegeoaddr ppg_geo_end = vaddr2paddr(lm, &vpg_geo_end);
         uint8_t* resbuf_t = resbuf;
         // read
         if (vpg_i_begin == vpg_i_end) {
-            rw_inside_page(node, buf, resbuf_t, meta, &poffset_begin, size, mode);
+            rw_inside_page_sb(lm, buf, resbuf_t, meta, &poffset_begin, size, mode);
             resbuf_t += size;
         } else {
             // read begin page
-            rw_inside_page(node, buf, resbuf_t, meta, &poffset_begin, vpg_sz - poffset_begin.offset_in_page, mode);
+            rw_inside_page_sb(lm, buf, resbuf_t, meta, &poffset_begin, vpg_sz - poffset_begin.offset_in_page, mode);
             resbuf_t += (vpg_sz - poffset_begin.offset_in_page);
             // read middle pages
             if (vpg_i_end - vpg_i_begin > 1) {
                 uint64_t middle_pgi;
                 for (middle_pgi = vpg_i_begin + 1; middle_pgi < vpg_i_end; middle_pgi++) {
-                    struct nodegeoaddr tvgeo = vpg2geoaddr(node, middle_pgi);
+                    struct nodegeoaddr tvgeo = vpg2geoaddr_sb(lm, middle_pgi);
                     struct nodegeoaddr tgeo = vaddr2paddr(lm, &tvgeo);
-                    rw_inside_page(node, buf, resbuf_t, meta, &tgeo, vpg_sz, mode);
+                    rw_inside_page_sb(lm, buf, resbuf_t, meta, &tgeo, vpg_sz, mode);
                     resbuf_t += vpg_sz;
                 }
             }
             // read end page
-            rw_inside_page(node, buf, resbuf_t, meta, &ppg_geo_end, poffset_end.offset_in_page + 1, mode);
+            rw_inside_page_sb(lm, buf, resbuf_t, meta, &ppg_geo_end, poffset_end.offset_in_page + 1, mode);
             resbuf_t += (poffset_end.offset_in_page + 1);
         }
     } else if (mode == WRITE_MODE) {
-        struct nodegeoaddr vpg_geo_begin = vpg2geoaddr(node, vpg_i_begin);
-        struct nodegeoaddr vpg_geo_end = vpg2geoaddr(node, vpg_i_end);
+        struct nodegeoaddr vpg_geo_begin = vpg2geoaddr_sb(lm, vpg_i_begin);
+        struct nodegeoaddr vpg_geo_end = vpg2geoaddr_sb(lm, vpg_i_end);
         struct nodegeoaddr ppg_geo_begin = vaddr2paddr(lm, &vpg_geo_begin);
         struct nodegeoaddr ppg_geo_end = vaddr2paddr(lm, &vpg_geo_end);
         uint8_t* resbuf_t = resbuf;
         // read first and last pages (if necessary) before GC!
         if (isalloc(lm, vpg_i_begin) && (((vpg_i_begin == vpg_i_end) && (voffset_begin.offset_in_page != 0 || voffset_end.offset_in_page != vpg_sz - 1)) || ((vpg_i_begin < vpg_i_end) && (voffset_begin.offset_in_page != 0))))
-            rw_inside_page(node, buf, meta->begin_pagebuf, meta, &ppg_geo_begin, vpg_sz, READ_MODE);
+            rw_inside_page_sb(lm, buf, meta->begin_pagebuf, meta, &ppg_geo_begin, vpg_sz, READ_MODE);
         if (isalloc(lm, vpg_i_end) && ((vpg_i_begin < vpg_i_end) && (voffset_end.offset_in_page != vpg_sz - 1)))
-            rw_inside_page(node, buf, meta->end_pagebuf, meta, &ppg_geo_end, vpg_sz, READ_MODE);
+            rw_inside_page_sb(lm, buf, meta->end_pagebuf, meta, &ppg_geo_end, vpg_sz, READ_MODE);
         
         realloc_sb(lm, vpg_i_begin, vpg_i_end);    
         
@@ -479,29 +572,29 @@ static int iterate_ls_io(struct fox_node* node, struct fox_blkbuf* buf, struct r
             }
             // alloc a new page here
             // uint64_t newppg = alloc_gc(lm, vpg_i_begin, vpg_i_begin, vpg_i_end);
-            struct nodegeoaddr vaddr = vpg2geoaddr(node, vpg_i_begin);
+            struct nodegeoaddr vaddr = vpg2geoaddr_sb(lm, vpg_i_begin);
             struct nodegeoaddr newppgaddr = vaddr2paddr(lm, &vaddr);
             memcpy(meta->begin_pagebuf + voffset_begin.offset_in_page, resbuf_t, size);
-            rw_inside_page(node, buf, meta->begin_pagebuf, meta, &newppgaddr, vpg_sz, mode);
+            rw_inside_page_sb(lm, buf, meta->begin_pagebuf, meta, &newppgaddr, vpg_sz, mode);
             resbuf_t += size;
         } else {
             // rw begin page
             if (isalloc(lm, vpg_i_begin) && (voffset_begin.offset_in_page != 0)) {
             }
             // uint64_t newppg = alloc_gc(lm, vpg_i_begin, vpg_i_begin, vpg_i_end);
-            struct nodegeoaddr vaddr = vpg2geoaddr(node, vpg_i_begin);
+            struct nodegeoaddr vaddr = vpg2geoaddr_sb(lm, vpg_i_begin);
             struct nodegeoaddr newppgaddr = vaddr2paddr(lm, &vaddr);
             memcpy(meta->begin_pagebuf + voffset_begin.offset_in_page, resbuf_t, vpg_sz - voffset_begin.offset_in_page);
-            rw_inside_page(node, buf, meta->begin_pagebuf, meta, &newppgaddr, vpg_sz, mode);
+            rw_inside_page_sb(lm, buf, meta->begin_pagebuf, meta, &newppgaddr, vpg_sz, mode);
             resbuf_t += (vpg_sz - voffset_begin.offset_in_page);
             // rw middle pages
             if (vpg_i_end - vpg_i_begin > 1) {
                 uint64_t middle_pgi;
                 for (middle_pgi = vpg_i_begin + 1; middle_pgi < vpg_i_end; middle_pgi++) {
                     //newppg = alloc_gc(lm, middle_pgi, 1, 0);
-                    vaddr = vpg2geoaddr(node, middle_pgi);
+                    vaddr = vpg2geoaddr_sb(lm, middle_pgi);
                     newppgaddr = vaddr2paddr(lm, &vaddr);
-                    rw_inside_page(node, buf, resbuf_t, meta, &newppgaddr, vpg_sz, mode);
+                    rw_inside_page_sb(lm, buf, resbuf_t, meta, &newppgaddr, vpg_sz, mode);
                     resbuf_t += vpg_sz;
                 }
             }
@@ -509,10 +602,10 @@ static int iterate_ls_io(struct fox_node* node, struct fox_blkbuf* buf, struct r
             if (isalloc(lm, vpg_i_end) && (voffset_end.offset_in_page != vpg_sz - 1)) {
             }
             // newppg = alloc_gc(lm, vpg_i_end, 1, 0);
-            vaddr = vpg2geoaddr(node, vpg_i_end);
+            vaddr = vpg2geoaddr_sb(lm, vpg_i_end);
             newppgaddr = vaddr2paddr(lm, &vaddr);
             memcpy(meta->end_pagebuf, resbuf_t, voffset_end.offset_in_page + 1);
-            rw_inside_page(node, buf, meta->end_pagebuf, meta, &newppgaddr, vpg_sz, mode);
+            rw_inside_page_sb(lm, buf, meta->end_pagebuf, meta, &newppgaddr, vpg_sz, mode);
             resbuf_t += (voffset_end.offset_in_page + 1);
         }
         garbage_collection(lm);

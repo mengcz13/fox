@@ -360,6 +360,10 @@ static int garbage_collection(struct ls_meta* lm) {
                     erase_sb(lm, psblki);
                     LIST_REMOVE(iter, pt);
                     LIST_INSERT_HEAD(&(lm->sblk_lists[lm->next_mpu_i].empty_sblks), iter, pt);
+                    lm->abandoned_pg_count -= iter->meta->nabandonedpgs;
+                    lm->clean_pg_count += iter->meta->nabandonedpgs;
+                    iter->meta->nabandonedpgs = 0;
+                    break;
                 }
                 iter = iternext;
             }
@@ -488,8 +492,10 @@ static int realloc_sb(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_e
                     uint64_t oldndpgs = lm->sblk_metas[psblki].ndirtypgs;
                     lm->sblk_metas[newpsblki].ndirtypgs = dpcount + vpgnum;
                     lm->sblk_metas[psblki].ndirtypgs = 0;
+                    lm->sblk_metas[psblki].nabandonedpgs = lm->sblk_tblks;
                     lm->dirty_pg_count += (dpcount + vpgnum - oldndpgs);
-                    lm->clean_pg_count -= (dpcount + vpgnum - oldndpgs);
+                    lm->clean_pg_count -= (dpcount + vpgnum + lm->sblk_tblks - oldndpgs);
+                    lm->abandoned_pg_count += lm->sblk_tblks;
                     lm->vsblk2psblk[csblki] = newpsblki;
                     lm->psblk2vsblk[newpsblki] = csblki;
                     lm->psblk2vsblk[psblki] = lm->sblk_ntotal;
@@ -502,6 +508,10 @@ static int realloc_sb(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_e
             }
         } else { // map not set, alloc a new superblock
             struct sblk_entry* nextemp = find_next_free_sb(lm);
+            while (nextemp == NULL) {
+                garbage_collection(lm);
+                nextemp = find_next_free_sb(lm);
+            }
             uint64_t psblki = nextemp->sblk_i;
             nextemp->meta->ndirtypgs = vpgnum;
             lm->dirty_pg_count += vpgnum;
@@ -564,6 +574,9 @@ static int iterate_ls_io(struct fox_node* node, struct fox_blkbuf* buf, struct r
         if (isalloc(lm, vpg_i_end) && ((vpg_i_begin < vpg_i_end) && (voffset_end.offset_in_page != vpg_sz - 1)))
             rw_inside_page_sb(lm, buf, meta->end_pagebuf, meta, &ppg_geo_end, vpg_sz, READ_MODE);
         
+        while (lm->clean_pg_count < vpg_i_end - vpg_i_begin + 1) {
+            garbage_collection(lm);
+        }
         realloc_sb(lm, vpg_i_begin, vpg_i_end);    
         
         // read or write...
@@ -608,7 +621,6 @@ static int iterate_ls_io(struct fox_node* node, struct fox_blkbuf* buf, struct r
             rw_inside_page_sb(lm, buf, meta->end_pagebuf, meta, &newppgaddr, vpg_sz, mode);
             resbuf_t += (voffset_end.offset_in_page + 1);
         }
-        garbage_collection(lm);
     }
     return 0;
 }

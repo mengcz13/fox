@@ -49,6 +49,8 @@ struct ls_meta {
     uint64_t dirty_pg_count;
     uint64_t abandoned_pg_count;
     uint64_t clean_pg_count;
+    uint64_t map_change_count;
+    uint64_t map_set_count;
     uint64_t* vpg2ppg;
     uint64_t* ppg2vpg;
     uint8_t* clblocks_buf;
@@ -63,6 +65,8 @@ static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, 
     lm->dirty_pg_count = 0;
     lm->abandoned_pg_count = 0;
     lm->clean_pg_count = meta->total_pagenum;
+    lm->map_change_count = 0;
+    lm->map_set_count = 0;
     lm->vpg2ppg = (uint64_t*)calloc(meta->total_pagenum, sizeof(uint64_t));
     lm->ppg2vpg = (uint64_t*)calloc(meta->total_pagenum, sizeof(uint64_t));
     lm->clblocks_buf = (uint8_t*)calloc((uint64_t)meta->node->nluns * meta->node->nchs * 1 * meta->node->npgs * meta->vpg_sz, sizeof(uint8_t));
@@ -171,6 +175,7 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
                     lm->ppg2vpg[oldppgi] = lm->meta->total_pagenum;
                     lm->vpg2ppg[vpgi] = nfblkppg;
                     lm->ppg2vpg[nfblkppg] = vpgi;
+                    lm->map_change_count++;
                     nfblkppg = (nfblkppg + 1) % lm->meta->total_pagenum;
                     nfblk = vpg2geoaddr(lm->meta->node, nfblkppg);
                 }
@@ -218,6 +223,7 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
                 lm->ppg2vpg[currpg] = lm->meta->total_pagenum;
                 lm->vpg2ppg[vpgi] = nfblkppg;
                 lm->ppg2vpg[nfblkppg] = vpgi;
+                lm->map_change_count++;
                 nfblkppg = (nfblkppg + 1) % (lm->meta->total_pagenum);
                 nfblk = vpg2geoaddr(lm->meta->node, nfblkppg);
             }
@@ -231,7 +237,8 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
 }
 
 static uint64_t allocate_page(struct ls_meta* lm, uint64_t vpg_i) {
-    if (isalloc(lm, vpg_i)) {
+    int isallocflag = isalloc(lm, vpg_i);
+    if (isallocflag) {
         uint64_t oldppg = lm->vpg2ppg[vpg_i];
         lm->meta->page_state[oldppg] = PAGE_ABANDONED;
         lm->dirty_pg_count--;
@@ -243,6 +250,10 @@ static uint64_t allocate_page(struct ls_meta* lm, uint64_t vpg_i) {
     lm->used_end_ppg = (lm->used_end_ppg + 1) % lm->meta->total_pagenum;
     lm->vpg2ppg[vpg_i] = newppg;
     lm->ppg2vpg[newppg] = vpg_i;
+    if (isallocflag)
+        lm->map_change_count++;
+    else
+        lm->map_set_count++;
     return newppg;
 }
 
@@ -373,6 +384,9 @@ static int rewrite_ls_start (struct fox_node *node)
     fox_start_node (node);
 
     for (t = 0; t < meta.ioseqlen; t++) {
+        if (t % 100 == 0) {
+            printf("%d/%d\n", t, meta.ioseqlen);
+        }
         int mode;
         if (meta.ioseq[t].iotype == 'r')
             mode = READ_MODE;
@@ -393,6 +407,8 @@ static int rewrite_ls_start (struct fox_node *node)
         meta.ioseq[t].nabandoned = lm.abandoned_pg_count;
         meta.ioseq[t].ndirty = lm.dirty_pg_count;
         meta.ioseq[t].nblock = nclblk;
+        meta.ioseq[t].map_change_count = lm.map_change_count;
+        meta.ioseq[t].map_set_count = lm.map_set_count;
     }
     fox_end_node (node);
 
@@ -402,6 +418,7 @@ static int rewrite_ls_start (struct fox_node *node)
     free(databuf);
     free_rewrite_meta(&meta);
     free_ls_meta(&lm);
+    printf("\n[%" PRId64 ", %" PRId64 "]\n", lm.map_change_count, lm.map_set_count);
     return 0;
 
 OUT:

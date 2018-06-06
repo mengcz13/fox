@@ -222,7 +222,7 @@ int write_meta_stats(struct rewrite_meta* meta) {
     uint64_t io_i = 0;
     for (io_i = 0; io_i < meta->ioseqlen; io_i++) {
         struct fox_iounit* ioseqi = &meta->ioseq[io_i];
-        fprintf(fp, "%" PRId64 ",%" PRId64 ",%c,%" PRId64 ",%d,%d,%d,%lf\n", ioseqi->offset, ioseqi->size, ioseqi->iotype, ioseqi->exetime, ioseqi->nabandoned, ioseqi->ndirty, ioseqi->nblock, ioseqi->gc_becost);
+        fprintf(fp, "%" PRId64 ",%" PRId64 ",%c,%" PRId64 ",%d,%d,%d,%lf,%d,%d\n", ioseqi->offset, ioseqi->size, ioseqi->iotype, ioseqi->exetime, ioseqi->nabandoned, ioseqi->ndirty, ioseqi->nblock, ioseqi->gc_becost, ioseqi->map_change_count, ioseqi->map_set_count);
     }
     fclose(fp);
 

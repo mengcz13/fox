@@ -69,6 +69,8 @@ struct ls_meta {
     uint64_t dirty_pg_count;
     uint64_t abandoned_pg_count;
     uint64_t clean_pg_count;
+    uint64_t map_change_count;
+    uint64_t map_set_count;
     uint64_t* vpg2ppg;
     uint64_t* ppg2vpg;
     struct blk_list* blk_lists; // 1 for each PU
@@ -239,7 +241,8 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
 
 static uint64_t allocate_page(struct ls_meta* lm, uint64_t vpg_i) {
     struct fox_node* node = lm->meta->node;
-    if (isalloc(lm, vpg_i)) {
+    int allocedflag = isalloc(lm, vpg_i);
+    if (allocedflag) {
         uint64_t oldppg = lm->vpg2ppg[vpg_i];
         lm->dirty_pg_count--;
         lm->abandoned_pg_count++;
@@ -279,6 +282,10 @@ static uint64_t allocate_page(struct ls_meta* lm, uint64_t vpg_i) {
         uint64_t newppg = geoaddr2vpg(node, &tgeo);
         lm->vpg2ppg[vpg_i] = newppg;
         lm->ppg2vpg[newppg] = vpg_i;
+        if (allocedflag)
+            lm->map_change_count++;
+        else
+            lm->map_set_count++;
         lm->clean_pg_count--;
         lm->dirty_pg_count++;
         act->meta->ndirtypgs++;
@@ -434,6 +441,8 @@ static int rewrite_ls_start (struct fox_node *node)
         // record benefit / cost
         meta.ioseq[t].nabandoned = lm.abandoned_pg_count;
         meta.ioseq[t].ndirty = lm.dirty_pg_count;
+        meta.ioseq[t].map_change_count = lm.map_change_count;
+        meta.ioseq[t].map_set_count = lm.map_set_count;
     }
     fox_end_node (node);
 
@@ -443,6 +452,9 @@ static int rewrite_ls_start (struct fox_node *node)
     free(databuf);
     free_rewrite_meta(&meta);
     free_ls_meta(&lm);
+
+    printf("\n[%" PRId64 ", %" PRId64 "]\n", lm.map_change_count, lm.map_set_count);
+
     return 0;
 
 OUT:

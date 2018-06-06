@@ -102,6 +102,8 @@ static struct argp_option opt_run[] = {
     {"engine", 'e', "<int>", 0, "I/O engine ID. (1)sequential, (2)round-robin,"
     " (3)isolation. Please check documentation for detailed information."},
     {"inputiopath", 'i', "<char>", 0, "Path to the IO record file."},
+    {"sb_pus", 'P', "<int>", 0, "FOR eng7, pus of each superblock"},
+    {"sb_blks", 'B', "<int>", 0, "For eng7, blks of each superblock"},
     {0}
 };
 
@@ -250,6 +252,18 @@ static error_t parse_opt_run (int key, char *arg, struct argp_state *state)
                 strcpy(args->inputiopath, arg);
             args->arg_num++;
             // args->arg_flag |= CMDARG_FLAG_I;
+            break;
+        case 'P':
+            if (!arg)
+                args->sb_pus = 1;
+            args->sb_pus = atoi(arg);
+            args->arg_num++;
+            break;
+        case 'B':
+            if (!arg)
+                args->sb_blks = 1;
+            args->sb_blks = atoi(arg);
+            args->arg_num++;
             break;
         case ARGP_KEY_END:
         case ARGP_KEY_ARG:

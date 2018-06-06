@@ -82,6 +82,8 @@ struct ls_meta {
     uint64_t dirty_pg_count;
     uint64_t abandoned_pg_count;
     uint64_t clean_pg_count;
+    uint64_t map_change_count;
+    uint64_t map_set_count;
     uint64_t* vsblk2psblk;
     uint64_t* psblk2vsblk;
     struct sblk_list* sblk_lists; // 1 for each mPU
@@ -176,8 +178,11 @@ static uint64_t geoaddr2vpg_sb(struct ls_meta* lm, struct nodegeoaddr* geoaddr) 
 }
 
 static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, struct ls_meta* lm) {
-    lm->sblk_npus = 1;
-    lm->sblk_nblks = 1;
+    uint64_t wl_npus = meta->node->wl->sb_pus;
+    uint64_t wl_nblks = meta->node->wl->sb_blks;
+    lm->sblk_npus = (wl_npus == 0) ? 1 : wl_npus;
+    lm->sblk_nblks = (wl_nblks == 0) ? 1 : wl_nblks;
+    printf("Superblock: %" PRId64 " PUs, %" PRId64 " BLKs\n", lm->sblk_npus, lm->sblk_nblks);
     lm->sblk_tblks = lm->sblk_npus * lm->sblk_nblks;
     lm->sblk_ntotal = (meta->node->nblks / lm->sblk_nblks) * (meta->node->nchs * meta->node->nluns / lm->sblk_npus);
     lm->meta = meta;
@@ -185,6 +190,8 @@ static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, 
     lm->dirty_pg_count = 0;
     lm->abandoned_pg_count = 0;
     lm->clean_pg_count = meta->total_pagenum;
+    lm->map_change_count = 0;
+    lm->map_set_count = 0;
     lm->vsblk2psblk = (uint64_t*)calloc(lm->sblk_ntotal, sizeof(uint64_t));
     lm->psblk2vsblk = (uint64_t*)calloc(lm->sblk_ntotal, sizeof(uint64_t));
     lm->next_mpu_i = 0;
@@ -499,6 +506,7 @@ static int realloc_sb(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_e
                     lm->vsblk2psblk[csblki] = newpsblki;
                     lm->psblk2vsblk[newpsblki] = csblki;
                     lm->psblk2vsblk[psblki] = lm->sblk_ntotal;
+                    lm->map_change_count++;
                 }
             } else {
                 // no need to modify mapping
@@ -518,6 +526,7 @@ static int realloc_sb(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_e
             lm->clean_pg_count -= vpgnum;
             lm->vsblk2psblk[csblki] = psblki;
             lm->psblk2vsblk[psblki] = csblki;
+            lm->map_set_count++;
         }
         vpg_sbfst = vpg_sblst + 1;
         vpg_sblst = vpg_sbfst;
@@ -667,6 +676,8 @@ static int rewrite_ls_start (struct fox_node *node)
         // record benefit / cost
         meta.ioseq[t].nabandoned = lm.abandoned_pg_count;
         meta.ioseq[t].ndirty = lm.dirty_pg_count;
+        meta.ioseq[t].map_change_count = lm.map_change_count;
+        meta.ioseq[t].map_set_count = lm.map_set_count;
     }
     fox_end_node (node);
 
@@ -676,6 +687,7 @@ static int rewrite_ls_start (struct fox_node *node)
     free(databuf);
     free_rewrite_meta(&meta);
     free_ls_meta(&lm);
+    printf("\n[%" PRId64 ", %" PRId64 "]\n", lm.map_change_count, lm.map_set_count);
     return 0;
 
 OUT:

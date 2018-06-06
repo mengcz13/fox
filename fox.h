@@ -71,7 +71,7 @@ enum {
 #define FOX_FLAG_DONE       (1 << 1)
 #define FOX_FLAG_MONITOR    (1 << 2)
 
-#define CMDARG_LEN          32
+#define CMDARG_LEN          512
 #define CMDARG_FLAG_D       (1 << 0)
 #define CMDARG_FLAG_T       (1 << 1)
 #define CMDARG_FLAG_C       (1 << 2)
@@ -130,6 +130,8 @@ struct fox_argp
     uint8_t     output;
     uint32_t    engine;
     char        inputiopath[CMDARG_LEN];  // used for engine 4/5, supporting arbitrary IO sequences!
+    uint64_t    sb_pus;
+    uint64_t    sb_blks;
 
     /* r/w/e parameters */
     uint8_t     io_ch;
@@ -215,6 +217,8 @@ struct fox_workload {
     pthread_mutex_t         monitor_mut;
     pthread_cond_t          monitor_con;
     char*                   inputiopath;
+    uint64_t                sb_pus;
+    uint64_t                sb_blks;
 };
 
 struct fox_blkbuf {

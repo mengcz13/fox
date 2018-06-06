@@ -36,6 +36,8 @@ struct fox_iounit {
     int nabandoned;
     int ndirty;
     int nblock;
+    int map_change_count;
+    int map_set_count;
 };
 
 struct fox_heatmap_unit {

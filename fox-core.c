@@ -220,6 +220,8 @@ int main (int argc, char **argv) {
     wl->memcmp = argp->memcmp;
     wl->output = argp->output;
     wl->inputiopath = argp->inputiopath;
+    wl->sb_pus = argp->sb_pus;
+    wl->sb_blks = argp->sb_blks;
 
     if (wl->devname[0] == 0) {
         wl->devname = malloc (13);

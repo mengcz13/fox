@@ -61,10 +61,10 @@ struct sblk_meta {
 struct sblk_entry {
     uint64_t sblk_i;
     struct sblk_meta* meta;
-    LIST_ENTRY(sblk_entry) pt;
+    TAILQ_ENTRY(sblk_entry) pt;
 };
 
-LIST_HEAD(sblk_entry_list, sblk_entry);
+TAILQ_HEAD(sblk_entry_list, sblk_entry);
 
 struct sblk_list {
     struct sblk_entry_list empty_sblks;
@@ -207,15 +207,15 @@ static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, 
     for (pui = 0; pui < meta->node->nchs * meta->node->nluns / lm->sblk_npus; pui++) {
         tsblkaddr.outer_pu_i = pui;
         struct sblk_list* listi = &(lm->sblk_lists[pui]);
-        LIST_INIT(&(listi->empty_sblks));
-        LIST_INIT(&(listi->non_empty_sblks));
+        TAILQ_INIT(&(listi->empty_sblks));
+        TAILQ_INIT(&(listi->non_empty_sblks));
         for (blki = 0; blki < meta->node->nblks / lm->sblk_nblks; blki++) {
             tsblkaddr.outer_blk_i = blki;
             uint64_t sblk_i = sblkaddr2sblki(lm, &tsblkaddr);
             struct sblk_entry* tsblk_entry = &(lm->sblk_entries[sblk_i]);
             tsblk_entry->sblk_i = sblk_i;
             tsblk_entry->meta = &(lm->sblk_metas[sblk_i]);
-            LIST_INSERT_HEAD(&(listi->empty_sblks), tsblk_entry, pt);
+            TAILQ_INSERT_TAIL(&(listi->empty_sblks), tsblk_entry, pt);
         }
         listi->active_sblk = NULL;
     }
@@ -358,15 +358,15 @@ static int garbage_collection(struct ls_meta* lm) {
     uint64_t total_mpus = lm->meta->node->nchs * lm->meta->node->nluns / lm->sblk_npus;
     for (offset = 0; offset < total_mpus; offset++) {
         struct sblk_entry_list* nonemptylist = &(lm->sblk_lists[lm->next_mpu_i].non_empty_sblks);
-        if (!LIST_EMPTY(nonemptylist)) {
-            struct sblk_entry* iter = LIST_FIRST(nonemptylist);
+        if (!TAILQ_EMPTY(nonemptylist)) {
+            struct sblk_entry* iter = TAILQ_FIRST(nonemptylist);
             while (iter != NULL) {
-                struct sblk_entry* iternext = LIST_NEXT(iter, pt);
+                struct sblk_entry* iternext = TAILQ_NEXT(iter, pt);
                 uint64_t psblki = iter->sblk_i;
                 if (iter->meta->ndirtypgs == 0) {
                     erase_sb(lm, psblki);
-                    LIST_REMOVE(iter, pt);
-                    LIST_INSERT_HEAD(&(lm->sblk_lists[lm->next_mpu_i].empty_sblks), iter, pt);
+                    TAILQ_REMOVE(nonemptylist, iter, pt);
+                    TAILQ_INSERT_TAIL(&(lm->sblk_lists[lm->next_mpu_i].empty_sblks), iter, pt);
                     lm->abandoned_pg_count -= iter->meta->nabandonedpgs;
                     lm->clean_pg_count += iter->meta->nabandonedpgs;
                     iter->meta->nabandonedpgs = 0;
@@ -385,11 +385,11 @@ static struct sblk_entry* find_next_free_sb(struct ls_meta* lm) {
     uint64_t total_mpus = lm->meta->node->nchs * lm->meta->node->nluns / lm->sblk_npus;
     for (offset = 0; offset < total_mpus; offset++) {
         struct sblk_entry_list* emptylist = &(lm->sblk_lists[lm->next_mpu_i].empty_sblks);
-        if (!LIST_EMPTY(emptylist)) {
+        if (!TAILQ_EMPTY(emptylist)) {
             lm->next_mpu_i = (lm->next_mpu_i + 1) % total_mpus;
-            struct sblk_entry* res = LIST_FIRST(emptylist);
-            LIST_REMOVE(res, pt);
-            LIST_INSERT_HEAD(&(lm->sblk_lists[lm->next_mpu_i].non_empty_sblks), res, pt);
+            struct sblk_entry* res = TAILQ_FIRST(emptylist);
+            TAILQ_REMOVE(emptylist, res, pt);
+            TAILQ_INSERT_TAIL(&(lm->sblk_lists[lm->next_mpu_i].non_empty_sblks), res, pt);
             return res;
         }
         lm->next_mpu_i = (lm->next_mpu_i + 1) % total_mpus;

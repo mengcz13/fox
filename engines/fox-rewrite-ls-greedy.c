@@ -52,10 +52,10 @@ struct blk_meta {
 struct blk_entry {
     uint64_t pblk_i;
     struct blk_meta* meta;
-    LIST_ENTRY(blk_entry) pt;
+    TAILQ_ENTRY(blk_entry) pt;
 };
 
-LIST_HEAD(blk_entry_list, blk_entry);
+TAILQ_HEAD(blk_entry_list, blk_entry);
 
 struct blk_list {
     struct blk_entry_list empty_blks;
@@ -104,15 +104,15 @@ static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, 
         for (luni = 0; luni < meta->node->nluns; luni++) {
             tgeoblk.lun_i = luni;
             struct blk_list* listi = &(lm->blk_lists[chi + luni * meta->node->nchs]);
-            LIST_INIT(&(listi->empty_blks));
-            LIST_INIT(&(listi->non_empty_blks));
+            TAILQ_INIT(&(listi->empty_blks));
+            TAILQ_INIT(&(listi->non_empty_blks));
             for (blki = 0; blki < meta->node->nblks; blki++) {
                 tgeoblk.blk_i = blki;
                 uint64_t tblk = geoaddr2vblk(meta->node, &tgeoblk);
                 struct blk_entry* tblk_entry = &(lm->blk_entries[tblk]);
                 tblk_entry->pblk_i = tblk;
                 tblk_entry->meta = &(lm->blk_metas[tblk]);
-                LIST_INSERT_HEAD(&(listi->empty_blks), tblk_entry, pt);
+                TAILQ_INSERT_TAIL(&(listi->empty_blks), tblk_entry, pt);
             }
             listi->active_blk = NULL;
         }
@@ -194,9 +194,9 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
     uint64_t mindirtypgs = node->npgs;
     for (ited_ch_lun_num = 0; ited_ch_lun_num < node->nchs * node->nluns; ited_ch_lun_num++) {
         struct blk_list* listi = &(lm->blk_lists[ited_ch_lun_num]);
-        if (!LIST_EMPTY(&(listi->non_empty_blks))) {
+        if (!TAILQ_EMPTY(&(listi->non_empty_blks))) {
             struct blk_entry* tentry;
-            LIST_FOREACH(tentry, &(listi->non_empty_blks), pt) {
+            TAILQ_FOREACH(tentry, &(listi->non_empty_blks), pt) {
                 // printf("%d\n", tentry->meta->ndirtypgs);
                 if (tentry->meta->ndirtypgs < mindirtypgs) {
                     mindirtypgs = tentry->meta->ndirtypgs;
@@ -228,8 +228,8 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
         lm->clean_pg_count += node->npgs;
         torecyc->meta->ndirtypgs = 0;
         torecyc->meta->nabandonedpgs = 0;
-        LIST_REMOVE(torecyc, pt);
-        LIST_INSERT_HEAD(&(torecyc_list->empty_blks), torecyc, pt);
+        TAILQ_REMOVE(&(torecyc_list->non_empty_blks), torecyc, pt);
+        TAILQ_INSERT_TAIL(&(torecyc_list->empty_blks), torecyc, pt);
         for (read_dpi = 0; read_dpi < total_read; read_dpi++) {
             uint64_t newppg = allocate_page(lm, lm->blkvpgs[read_dpi]);
             struct nodegeoaddr newppggeo = vpg2geoaddr(node, newppg);
@@ -262,10 +262,10 @@ static uint64_t allocate_page(struct ls_meta* lm, uint64_t vpg_i) {
             listi = &(lm->blk_lists[lm->next_ch_lun_i]);
             break;
         }
-        else if (!LIST_EMPTY(&(lm->blk_lists[lm->next_ch_lun_i].empty_blks))) {
+        else if (!TAILQ_EMPTY(&(lm->blk_lists[lm->next_ch_lun_i].empty_blks))) {
             listi = &(lm->blk_lists[lm->next_ch_lun_i]);
-            struct blk_entry* newemp = LIST_FIRST(&(listi->empty_blks));
-            LIST_REMOVE(newemp, pt);
+            struct blk_entry* newemp = TAILQ_FIRST(&(listi->empty_blks));
+            TAILQ_REMOVE(&(listi->empty_blks), newemp, pt);
             listi->active_blk = newemp;
             break;
         }
@@ -292,7 +292,7 @@ static uint64_t allocate_page(struct ls_meta* lm, uint64_t vpg_i) {
         // remove if used up!
         if (act->meta->ndirtypgs + act->meta->nabandonedpgs == node->npgs) {
             listi->active_blk = NULL;
-            LIST_INSERT_HEAD(&(listi->non_empty_blks), act, pt);
+            TAILQ_INSERT_TAIL(&(listi->non_empty_blks), act, pt);
         }
         return newppg;
     }

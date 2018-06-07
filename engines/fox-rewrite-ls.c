@@ -51,6 +51,9 @@ struct ls_meta {
     uint64_t clean_pg_count;
     uint64_t map_change_count;
     uint64_t map_set_count;
+    uint64_t gc_count;
+    uint64_t gc_time;
+    uint64_t gc_map_change_count;
     uint64_t* vpg2ppg;
     uint64_t* ppg2vpg;
     uint8_t* clblocks_buf;
@@ -67,6 +70,9 @@ static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, 
     lm->clean_pg_count = meta->total_pagenum;
     lm->map_change_count = 0;
     lm->map_set_count = 0;
+    lm->gc_count = 0;
+    lm->gc_time = 0;
+    lm->gc_map_change_count = 0;
     lm->vpg2ppg = (uint64_t*)calloc(meta->total_pagenum, sizeof(uint64_t));
     lm->ppg2vpg = (uint64_t*)calloc(meta->total_pagenum, sizeof(uint64_t));
     lm->clblocks_buf = (uint8_t*)calloc((uint64_t)meta->node->nluns * meta->node->nchs * 1 * meta->node->npgs * meta->vpg_sz, sizeof(uint8_t));
@@ -119,6 +125,8 @@ static int isalloc(struct ls_meta* lm, uint64_t vpg_i) {
 static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_end) {
     if (lm->clean_pg_count == lm->meta->total_pagenum)
         return 0;
+    struct timeval tvalst, tvaled;
+    gettimeofday(&tvalst, NULL);
     // abandon pages to rewrite
     uint64_t vpg_i = 0;
     for (vpg_i = vpg_i_begin; vpg_i <= vpg_i_end; vpg_i++) {
@@ -176,6 +184,7 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
                     lm->vpg2ppg[vpgi] = nfblkppg;
                     lm->ppg2vpg[nfblkppg] = vpgi;
                     lm->map_change_count++;
+                    lm->gc_map_change_count++;
                     nfblkppg = (nfblkppg + 1) % lm->meta->total_pagenum;
                     nfblk = vpg2geoaddr(lm->meta->node, nfblkppg);
                 }
@@ -224,6 +233,7 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
                 lm->vpg2ppg[vpgi] = nfblkppg;
                 lm->ppg2vpg[nfblkppg] = vpgi;
                 lm->map_change_count++;
+                lm->gc_map_change_count++;
                 nfblkppg = (nfblkppg + 1) % (lm->meta->total_pagenum);
                 nfblk = vpg2geoaddr(lm->meta->node, nfblkppg);
             }
@@ -233,6 +243,9 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
     }
     lm->clean_pg_count += lm->abandoned_pg_count;
     lm->abandoned_pg_count = 0;
+    lm->gc_count++;
+    gettimeofday(&tvaled, NULL);
+    lm->gc_time += ((uint64_t)(tvaled.tv_sec - tvalst.tv_sec) * 1000000L + tvaled.tv_usec) - tvalst.tv_usec;
     return 0;
 }
 
@@ -409,6 +422,9 @@ static int rewrite_ls_start (struct fox_node *node)
         meta.ioseq[t].nblock = nclblk;
         meta.ioseq[t].map_change_count = lm.map_change_count;
         meta.ioseq[t].map_set_count = lm.map_set_count;
+        meta.ioseq[t].gc_count = lm.gc_count;
+        meta.ioseq[t].gc_time = lm.gc_time;
+        meta.ioseq[t].gc_map_change_count = lm.gc_map_change_count;
     }
     fox_end_node (node);
 

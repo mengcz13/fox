@@ -38,6 +38,9 @@ struct fox_iounit {
     int nblock;
     int map_change_count;
     int map_set_count;
+    int gc_count;
+    uint64_t gc_time;
+    int gc_map_change_count;
 };
 
 struct fox_heatmap_unit {

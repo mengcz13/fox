@@ -84,6 +84,9 @@ struct ls_meta {
     uint64_t clean_pg_count;
     uint64_t map_change_count;
     uint64_t map_set_count;
+    uint64_t gc_count;
+    uint64_t gc_time;
+    uint64_t gc_map_change_count;
     uint64_t* vsblk2psblk;
     uint64_t* psblk2vsblk;
     struct sblk_list* sblk_lists; // 1 for each mPU
@@ -354,7 +357,10 @@ static int erase_block_sb(struct ls_meta* lm, struct rewrite_meta* meta, struct 
 static int erase_sb(struct ls_meta* lm, uint64_t psblki);
 
 static int garbage_collection(struct ls_meta* lm) {
+    struct timeval tvalst, tvaled;
+    gettimeofday(&tvalst, NULL);
     int offset = 0;
+    int recycleflag = 0;
     uint64_t total_mpus = lm->meta->node->nchs * lm->meta->node->nluns / lm->sblk_npus;
     for (offset = 0; offset < total_mpus; offset++) {
         struct sblk_entry_list* nonemptylist = &(lm->sblk_lists[lm->next_mpu_i].non_empty_sblks);
@@ -370,13 +376,19 @@ static int garbage_collection(struct ls_meta* lm) {
                     lm->abandoned_pg_count -= iter->meta->nabandonedpgs;
                     lm->clean_pg_count += iter->meta->nabandonedpgs;
                     iter->meta->nabandonedpgs = 0;
+                    recycleflag++;
                     break;
                 }
                 iter = iternext;
             }
+            if (recycleflag > 0)
+                break;
         }
         lm->next_mpu_i = (lm->next_mpu_i + 1) % total_mpus;
     }
+    gettimeofday(&tvaled, NULL);
+    lm->gc_time += ((uint64_t)(tvaled.tv_sec - tvalst.tv_sec) * 1000000L + tvaled.tv_usec) - tvalst.tv_usec;
+    lm->gc_count++;
     return 0;
 }
 
@@ -678,6 +690,9 @@ static int rewrite_ls_start (struct fox_node *node)
         meta.ioseq[t].ndirty = lm.dirty_pg_count;
         meta.ioseq[t].map_change_count = lm.map_change_count;
         meta.ioseq[t].map_set_count = lm.map_set_count;
+        meta.ioseq[t].gc_count = lm.gc_count;
+        meta.ioseq[t].gc_time = lm.gc_time;
+        meta.ioseq[t].gc_map_change_count = lm.gc_map_change_count;
     }
     fox_end_node (node);
 

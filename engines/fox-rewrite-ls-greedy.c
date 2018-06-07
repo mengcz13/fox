@@ -71,6 +71,9 @@ struct ls_meta {
     uint64_t clean_pg_count;
     uint64_t map_change_count;
     uint64_t map_set_count;
+    uint64_t gc_count;
+    uint64_t gc_time;
+    uint64_t gc_map_change_count;
     uint64_t* vpg2ppg;
     uint64_t* ppg2vpg;
     struct blk_list* blk_lists; // 1 for each PU
@@ -172,6 +175,8 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
     struct fox_node* node = lm->meta->node;
     if (lm->clean_pg_count == lm->meta->total_pagenum)
         return 0;
+    struct timeval tvalst, tvaled;
+    gettimeofday(&tvalst, NULL);
     // abandon pages to rewrite
     uint64_t vpg_i = 0;
     for (vpg_i = vpg_i_begin; vpg_i <= vpg_i_end; vpg_i++) {
@@ -193,7 +198,8 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
     struct blk_list* torecyc_list = NULL;
     uint64_t mindirtypgs = node->npgs;
     for (ited_ch_lun_num = 0; ited_ch_lun_num < node->nchs * node->nluns; ited_ch_lun_num++) {
-        struct blk_list* listi = &(lm->blk_lists[ited_ch_lun_num]);
+        lm->next_ch_lun_i = (lm->next_ch_lun_i + ited_ch_lun_num) % (node->nchs * node->nluns);
+        struct blk_list* listi = &(lm->blk_lists[lm->next_ch_lun_i]);
         if (!TAILQ_EMPTY(&(listi->non_empty_blks))) {
             struct blk_entry* tentry;
             TAILQ_FOREACH(tentry, &(listi->non_empty_blks), pt) {
@@ -235,7 +241,11 @@ static int garbage_collection(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t
             struct nodegeoaddr newppggeo = vpg2geoaddr(node, newppg);
             rw_inside_page(node, lm->blockbuf, lm->blkbuf + read_dpi * lm->meta->vpg_sz, lm->meta, &newppggeo, lm->meta->vpg_sz, WRITE_MODE);
         }
+        lm->gc_map_change_count += total_read;
     }
+    gettimeofday(&tvaled, NULL);
+    lm->gc_count++;
+    lm->gc_time += ((uint64_t)(tvaled.tv_sec - tvalst.tv_sec) * 1000000L + tvaled.tv_usec) - tvalst.tv_usec;
     return 0;
 }
 
@@ -262,12 +272,17 @@ static uint64_t allocate_page(struct ls_meta* lm, uint64_t vpg_i) {
             listi = &(lm->blk_lists[lm->next_ch_lun_i]);
             break;
         }
-        else if (!TAILQ_EMPTY(&(lm->blk_lists[lm->next_ch_lun_i].empty_blks))) {
-            listi = &(lm->blk_lists[lm->next_ch_lun_i]);
-            struct blk_entry* newemp = TAILQ_FIRST(&(listi->empty_blks));
-            TAILQ_REMOVE(&(listi->empty_blks), newemp, pt);
-            listi->active_blk = newemp;
-            break;
+    }
+    if (listi == NULL) {
+        for (ited_ch_lun_num = 0; ited_ch_lun_num <= node->nchs * node->nluns; ited_ch_lun_num++) {
+            lm->next_ch_lun_i = (lm->next_ch_lun_i + ited_ch_lun_num) % (node->nchs * node->nluns);
+            if (!TAILQ_EMPTY(&(lm->blk_lists[lm->next_ch_lun_i].empty_blks))) {
+                listi = &(lm->blk_lists[lm->next_ch_lun_i]);
+                struct blk_entry* newemp = TAILQ_FIRST(&(listi->empty_blks));
+                TAILQ_REMOVE(&(listi->empty_blks), newemp, pt);
+                listi->active_blk = newemp;
+                break;
+            }
         }
     }
     if (listi == NULL) {
@@ -443,6 +458,9 @@ static int rewrite_ls_start (struct fox_node *node)
         meta.ioseq[t].ndirty = lm.dirty_pg_count;
         meta.ioseq[t].map_change_count = lm.map_change_count;
         meta.ioseq[t].map_set_count = lm.map_set_count;
+        meta.ioseq[t].gc_count = lm.gc_count;
+        meta.ioseq[t].gc_time = lm.gc_time;
+        meta.ioseq[t].gc_map_change_count = lm.gc_map_change_count;
     }
     fox_end_node (node);
 

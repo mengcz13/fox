@@ -195,6 +195,9 @@ static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, 
     lm->clean_pg_count = meta->total_pagenum;
     lm->map_change_count = 0;
     lm->map_set_count = 0;
+    lm->gc_count = 0;
+    lm->gc_time = 0;
+    lm->gc_map_change_count = 0;
     lm->vsblk2psblk = (uint64_t*)calloc(lm->sblk_ntotal, sizeof(uint64_t));
     lm->psblk2vsblk = (uint64_t*)calloc(lm->sblk_ntotal, sizeof(uint64_t));
     lm->next_mpu_i = 0;
@@ -454,6 +457,12 @@ static int realloc_sb(struct ls_meta* lm, uint64_t vpg_i_begin, uint64_t vpg_i_e
             if (rewriteflag > 0) {
                 // get a new superblock and merge
                 struct sblk_entry* nextemp = find_next_free_sb(lm);
+                uint64_t trycount = 0;
+                while (nextemp == NULL && trycount < lm->sblk_tblks) {
+                    garbage_collection(lm);
+                    nextemp = find_next_free_sb(lm);
+                    trycount++;
+                }
                 // read all dirty pages in superblock
                 struct sblkaddr ta = sblki2sblkaddr(lm, psblki);
                 ta.offset_in_page = 0;

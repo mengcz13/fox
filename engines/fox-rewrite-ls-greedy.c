@@ -90,6 +90,11 @@ static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, 
     lm->dirty_pg_count = 0;
     lm->abandoned_pg_count = 0;
     lm->clean_pg_count = meta->total_pagenum;
+    lm->map_change_count = 0;
+    lm->map_set_count = 0;
+    lm->gc_count = 0;
+    lm->gc_time = 0;
+    lm->gc_map_change_count = 0;
     lm->vpg2ppg = (uint64_t*)calloc(meta->total_pagenum, sizeof(uint64_t));
     lm->ppg2vpg = (uint64_t*)calloc(meta->total_pagenum, sizeof(uint64_t));
     lm->next_ch_lun_i = 0;

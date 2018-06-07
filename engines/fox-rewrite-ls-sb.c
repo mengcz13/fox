@@ -702,6 +702,15 @@ static int rewrite_ls_start (struct fox_node *node)
         meta.ioseq[t].gc_count = lm.gc_count;
         meta.ioseq[t].gc_time = lm.gc_time;
         meta.ioseq[t].gc_map_change_count = lm.gc_map_change_count;
+        struct fox_stats* st = &node->stats;
+        meta.ioseq[t].bread = st->bread;
+        meta.ioseq[t].pgs_r = st->pgs_r;
+        meta.ioseq[t].bwritten = st->bwritten;
+        meta.ioseq[t].pgs_w = st->pgs_w;
+        meta.ioseq[t].erased_blks = st->erased_blks;
+        meta.ioseq[t].erase_t = st->erase_t;
+        meta.ioseq[t].read_t = st->read_t;
+        meta.ioseq[t].write_t = st->write_t;
     }
     fox_end_node (node);
 

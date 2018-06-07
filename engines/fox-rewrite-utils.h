@@ -33,14 +33,22 @@ struct fox_iounit {
     uint64_t size;
     uint64_t exetime;
     double gc_becost; // benefit / cost factor for gc
-    int nabandoned;
-    int ndirty;
-    int nblock;
-    int map_change_count;
-    int map_set_count;
-    int gc_count;
+    uint64_t nabandoned;
+    uint64_t ndirty;
+    uint64_t nblock;
+    uint64_t map_change_count;
+    uint64_t map_set_count;
+    uint64_t gc_count;
     uint64_t gc_time;
-    int gc_map_change_count;
+    uint64_t gc_map_change_count;
+    uint64_t pgs_r;
+    uint64_t bread;
+    uint64_t pgs_w;
+    uint64_t bwritten;
+    uint64_t erased_blks;
+    uint64_t erase_t;
+    uint64_t read_t;
+    uint64_t write_t;
 };
 
 struct fox_heatmap_unit {

@@ -222,7 +222,7 @@ int write_meta_stats(struct rewrite_meta* meta) {
     uint64_t io_i = 0;
     for (io_i = 0; io_i < meta->ioseqlen; io_i++) {
         struct fox_iounit* ioseqi = &meta->ioseq[io_i];
-        fprintf(fp, "%" PRId64 ",%" PRId64 ",%c,%" PRId64 ",%d,%d,%d,%lf,%d,%d,%d,%" PRId64 ",%d\n", ioseqi->offset, ioseqi->size, ioseqi->iotype, ioseqi->exetime, ioseqi->nabandoned, ioseqi->ndirty, ioseqi->nblock, ioseqi->gc_becost, ioseqi->map_change_count, ioseqi->map_set_count, ioseqi->gc_count, ioseqi->gc_time, ioseqi->gc_map_change_count);
+        fprintf(fp, "%" PRId64 ",%" PRId64 ",%c,%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%lf,%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 "\n", ioseqi->offset, ioseqi->size, ioseqi->iotype, ioseqi->exetime, ioseqi->nabandoned, ioseqi->ndirty, ioseqi->nblock, ioseqi->gc_becost, ioseqi->map_change_count, ioseqi->map_set_count, ioseqi->gc_count, ioseqi->gc_time, ioseqi->gc_map_change_count, ioseqi->pgs_r, ioseqi->bread, ioseqi->pgs_w, ioseqi->bwritten, ioseqi->erased_blks, ioseqi->erase_t, ioseqi->read_t, ioseqi->write_t);
     }
     fclose(fp);
 

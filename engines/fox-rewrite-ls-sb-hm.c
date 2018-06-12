@@ -397,7 +397,7 @@ static int abandon_sblk(struct ls_meta* lm, uint64_t data_psblk_i) {
     struct sblk_entry* olddb = &(lm->sblk_entries[data_psblk_i]);
     uint64_t olddirty = olddb->meta->ndirtypgs;
     olddb->meta->ndirtypgs = 0;
-    olddb->meta->nabandonedpgs = olddirty;
+    olddb->meta->nabandonedpgs += olddirty;
     lm->dirty_pg_count -= olddirty;
     lm->abandoned_pg_count += olddirty;
     lm->psblk2vsblk[data_psblk_i] = lm->sblk_ntotal;
@@ -414,6 +414,24 @@ static int check_datafit(struct ls_meta* lm, struct lbpm_entry* le) {
         }
     }
     return datafit;
+}
+
+static int check_clean_sblk(struct ls_meta* lm, uint64_t psblk_i) {
+    uint64_t pginsbi;
+    int clean = 1;
+    for (pginsbi = 0; pginsbi < lm->sblk_tpgs; pginsbi++) {
+        struct logblockaddr t_log;
+        t_log.sblk_i = psblk_i;
+        t_log.insb_pg_i = pginsbi;
+        t_log.offset_in_page = 0;
+        struct nodegeoaddr pgi_geo = logblockaddr2geoaddr(lm, &t_log);
+        uint64_t pgi = geoaddr2vpg_sb(lm, &pgi_geo);
+        if (lm->meta->page_state[pgi] != PAGE_CLEAN) {
+            printf("check new clean blk: dirty page at %" PRId64 "\n", pgi);
+            clean = 0;
+        }
+    }
+    return clean;
 }
 
 static int merge_cost(struct ls_meta* lm, struct lbpm_entry* le) {
@@ -470,11 +488,13 @@ static int merge_log_data(struct ls_meta* lm, uint64_t vsblk_i) {
                 srcaddr = logblockaddr2geoaddr(lm, &t_logblk);
                 rw_inside_page_sb(lm, lm->blockbuf, lm->meta->pagebuf, lm->meta, &srcaddr, lm->meta->vpg_sz, READ_MODE);
                 rw_inside_page_sb(lm, lm->blockbuf, lm->meta->pagebuf, lm->meta, &dstaddr, lm->meta->vpg_sz, WRITE_MODE);
+                newsblk->meta->ndirtypgs++;
             } else if (data_psblk_i != lm->sblk_ntotal) {
                 srcaddr = logblockaddr2geoaddr(lm, &t_datablk);
                 if (lm->meta->page_state[geoaddr2vpg_sb(lm, &srcaddr)] == PAGE_DIRTY) {
                     rw_inside_page_sb(lm, lm->blockbuf, lm->meta->pagebuf, lm->meta, &srcaddr, lm->meta->vpg_sz, READ_MODE);
                     rw_inside_page_sb(lm, lm->blockbuf, lm->meta->pagebuf, lm->meta, &dstaddr, lm->meta->vpg_sz, WRITE_MODE);
+                    newsblk->meta->ndirtypgs++;
                 }
             }
         }
@@ -576,6 +596,9 @@ static uint64_t alloc_page(struct ls_meta* lm, uint64_t vpgi, uint64_t vpgi_begi
             lm->abandoned_pg_count++;
             lm->clean_pg_count--;
             lm->map_change_count++;
+        }
+        if (lm->meta->page_state[newppg_i] != PAGE_CLEAN) {
+            printf("dirty page at %" PRId64 ", %" PRId64 ", %" PRId64 "\n", psblk_i, vpgi, newppg_i);
         }
         return newppg_i;
     }
@@ -689,6 +712,7 @@ static struct sblk_entry* find_next_free_sb(struct ls_meta* lm) {
             struct sblk_entry* res = TAILQ_FIRST(emptylist);
             TAILQ_REMOVE(emptylist, res, pt);
             TAILQ_INSERT_TAIL(&(lm->sblk_lists[lm->next_mpu_i].non_empty_sblks), res, pt);
+            int clean = check_clean_sblk(lm, res->sblk_i);
             return res;
         }
         lm->next_mpu_i = (lm->next_mpu_i + 1) % total_mpus;

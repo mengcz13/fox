@@ -489,12 +489,16 @@ static int merge_log_data(struct ls_meta* lm, uint64_t vsblk_i) {
                 rw_inside_page_sb(lm, lm->blockbuf, lm->meta->pagebuf, lm->meta, &srcaddr, lm->meta->vpg_sz, READ_MODE);
                 rw_inside_page_sb(lm, lm->blockbuf, lm->meta->pagebuf, lm->meta, &dstaddr, lm->meta->vpg_sz, WRITE_MODE);
                 newsblk->meta->ndirtypgs++;
+                lm->dirty_pg_count++;
+                lm->clean_pg_count--;
             } else if (data_psblk_i != lm->sblk_ntotal) {
                 srcaddr = logblockaddr2geoaddr(lm, &t_datablk);
                 if (lm->meta->page_state[geoaddr2vpg_sb(lm, &srcaddr)] == PAGE_DIRTY) {
                     rw_inside_page_sb(lm, lm->blockbuf, lm->meta->pagebuf, lm->meta, &srcaddr, lm->meta->vpg_sz, READ_MODE);
                     rw_inside_page_sb(lm, lm->blockbuf, lm->meta->pagebuf, lm->meta, &dstaddr, lm->meta->vpg_sz, WRITE_MODE);
                     newsblk->meta->ndirtypgs++;
+                    lm->dirty_pg_count++;
+                    lm->clean_pg_count--;
                 }
             }
         }

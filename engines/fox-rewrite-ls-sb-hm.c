@@ -712,7 +712,7 @@ static struct sblk_entry* find_next_free_sb(struct ls_meta* lm) {
             struct sblk_entry* res = TAILQ_FIRST(emptylist);
             TAILQ_REMOVE(emptylist, res, pt);
             TAILQ_INSERT_TAIL(&(lm->sblk_lists[lm->next_mpu_i].non_empty_sblks), res, pt);
-            int clean = check_clean_sblk(lm, res->sblk_i);
+            // int clean = check_clean_sblk(lm, res->sblk_i);
             return res;
         }
         lm->next_mpu_i = (lm->next_mpu_i + 1) % total_mpus;

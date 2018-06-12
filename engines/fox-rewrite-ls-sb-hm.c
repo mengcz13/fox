@@ -408,7 +408,7 @@ static int check_datafit(struct ls_meta* lm, struct lbpm_entry* le) {
     uint64_t pginsbi;
     int datafit = 1;
     for (pginsbi = 0; pginsbi < lm->sblk_tpgs; pginsbi++) {
-        if (le->vpg2ppg[pginsbi] != pginsbi) {
+        if (le->vpg2ppg[pginsbi] < lm->sblk_tpgs && le->vpg2ppg[pginsbi] != pginsbi) {
             datafit = 0;
             break;
         }

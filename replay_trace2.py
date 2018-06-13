@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--sbsize', action='store_true')
     parser.add_argument('--disksize', action='store_true')
     parser.add_argument('--blocksize', action='store_true')
+    parser.add_argument('--logblknum', action='store_true')
     args = parser.parse_args()
 
     # default set
@@ -27,9 +28,9 @@ def main():
             os.makedirs(exprespath)
         for trace in TRACES:
             if trace == 'macdrp':
-                nb, np = 32, 32 # for small IOs
+                nb, np = 16, 32 # for small IOs
             elif trace == 'lammps_short':
-                nb, np = 32, 32 # for large IOs, cut
+                nb, np = 16, 32 # for large IOs, cut
             for eng in ENGS:
                 wd = os.path.join(exprespath, trace, str(eng))
                 if not os.path.exists(wd):
@@ -81,17 +82,31 @@ def main():
         if not os.path.exists(exprespath):
             os.makedirs(exprespath)
         for trace in TRACES:
-            if trace == 'macdrp':
-                np = 16
-            elif trace == 'lammps_short':
-                np = 32
-            for nb in [16, 32, 62]:
+            for np in [8, 16, 32, 64]:
+                nb = 16 * 32 // np
+                nb = min(62, nb)
                 for eng in ENGS:
                     wd = os.path.join(exprespath, trace, str(eng), '%d_%d' % (nb, np))
                     if not os.path.exists(wd):
                         os.makedirs(wd)
                     inputtrace = os.path.join(INPUTDIR, 'input_%s.csv' % (trace))
                     subp = subprocess.Popen("sudo %s run -d /dev/nvme0n1 -j 1 -c 8 -l 4 -b %d -p %d -r 0 -w 100 -v 8 -e %d -o -i %s" % (BENCH, nb, np, eng, inputtrace), shell=True, cwd=wd)
+                    subp.wait()
+
+    # change number of log blocks
+    if args.logblknum:
+        exprespath = os.path.join(OUTPUTDIR, 'logblknum')
+        if not os.path.exists(exprespath):
+            os.makedirs(exprespath)
+        for trace in TRACES:
+            nb, np = 16, 32
+            for nlogblknum in [2, 4, 8, 16, 32]: #, (1, 2), (1, 4), (1, 8)]:
+                for eng in [8,]:
+                    wd = os.path.join(exprespath, trace, str(eng), '%d' % (nlogblknum))
+                    if not os.path.exists(wd):
+                        os.makedirs(wd)
+                    inputtrace = os.path.join(INPUTDIR, 'input_%s.csv' % (trace))
+                    subp = subprocess.Popen("sudo %s run -d /dev/nvme0n1 -j 1 -c 8 -l 4 -b %d -p %d -r 0 -w 100 -v 8 -e %d -o --logblknum %d -i %s" % (BENCH, nb, np, eng, nlogblknum, inputtrace), shell=True, cwd=wd)
                     subp.wait()
 
 if __name__ == '__main__':

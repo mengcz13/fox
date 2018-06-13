@@ -104,6 +104,7 @@ static struct argp_option opt_run[] = {
     {"inputiopath", 'i', "<char>", 0, "Path to the IO record file."},
     {"sb_pus", 'P', "<int>", 0, "FOR eng7, pus of each superblock"},
     {"sb_blks", 'B', "<int>", 0, "For eng7, blks of each superblock"},
+    {"logblknum", 'L', "<int>", 0, "for eng8, number of log blocks"},
     {0}
 };
 
@@ -263,6 +264,12 @@ static error_t parse_opt_run (int key, char *arg, struct argp_state *state)
             if (!arg)
                 args->sb_blks = 1;
             args->sb_blks = atoi(arg);
+            args->arg_num++;
+            break;
+        case 'L':
+            if (!arg)
+                args->logblknum = 8;
+            args->logblknum = atoi(arg);
             args->arg_num++;
             break;
         case ARGP_KEY_END:

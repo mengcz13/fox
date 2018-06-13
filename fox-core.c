@@ -222,6 +222,7 @@ int main (int argc, char **argv) {
     wl->inputiopath = argp->inputiopath;
     wl->sb_pus = argp->sb_pus;
     wl->sb_blks = argp->sb_blks;
+    wl->logblknum = argp->logblknum;
 
     if (wl->devname[0] == 0) {
         wl->devname = malloc (13);

@@ -133,6 +133,7 @@ struct fox_argp
     char        inputiopath[CMDARG_LEN];  // used for engine 4/5, supporting arbitrary IO sequences!
     uint64_t    sb_pus;
     uint64_t    sb_blks;
+    uint64_t    logblknum;
 
     /* r/w/e parameters */
     uint8_t     io_ch;
@@ -220,6 +221,7 @@ struct fox_workload {
     char*                   inputiopath;
     uint64_t                sb_pus;
     uint64_t                sb_blks;
+    uint64_t                logblknum;
 };
 
 struct fox_blkbuf {

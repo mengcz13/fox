@@ -225,10 +225,11 @@ static uint64_t geoaddr2vpg_sb(struct ls_meta* lm, struct nodegeoaddr* geoaddr) 
 static int init_ls_meta(struct rewrite_meta* meta, struct fox_blkbuf* blockbuf, struct ls_meta* lm) {
     uint64_t wl_npus = meta->node->wl->sb_pus;
     uint64_t wl_nblks = meta->node->wl->sb_blks;
-    lm->lbpm_entry_num = 10;
+    uint64_t wl_logblknum = meta->node->wl->logblknum;
     lm->sblk_npus = (wl_npus == 0) ? 1 : wl_npus;
     lm->sblk_nblks = (wl_nblks == 0) ? 1 : wl_nblks;
-    printf("Superblock: %" PRId64 " PUs, %" PRId64 " BLKs\n", lm->sblk_npus, lm->sblk_nblks);
+    lm->lbpm_entry_num = (wl_logblknum == 0) ? 8 : wl_logblknum;
+    printf("Superblock: %" PRId64 " PUs, %" PRId64 " BLKs, %" PRId64 " LOG BLOCKS\n", lm->sblk_npus, lm->sblk_nblks, lm->lbpm_entry_num);
     lm->sblk_tblks = lm->sblk_npus * lm->sblk_nblks;
     lm->sblk_tpgs = lm->sblk_tblks * meta->node->npgs;
     printf("One superblock: %" PRId64 " blocks, %" PRId64 " pages\n", lm->sblk_tblks, lm->sblk_tpgs);

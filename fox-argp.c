@@ -101,6 +101,10 @@ static struct argp_option opt_run[] = {
     "(3)real time average information"},
     {"engine", 'e', "<int>", 0, "I/O engine ID. (1)sequential, (2)round-robin,"
     " (3)isolation. Please check documentation for detailed information."},
+    {"inputiopath", 'i', "<char>", 0, "Path to the IO record file."},
+    {"sb_pus", 'P', "<int>", 0, "FOR eng7, pus of each superblock"},
+    {"sb_blks", 'B', "<int>", 0, "For eng7, blks of each superblock"},
+    {"logblknum", 'L', "<int>", 0, "for eng8, number of log blocks"},
     {0}
 };
 
@@ -241,6 +245,32 @@ static error_t parse_opt_run (int key, char *arg, struct argp_state *state)
             args->engine = atoi (arg);
             args->arg_num++;
             args->arg_flag |= CMDARG_FLAG_E;
+            break;
+        case 'i':
+            if (!arg)
+                strcpy(args->inputiopath, "input.csv");
+            else
+                strcpy(args->inputiopath, arg);
+            args->arg_num++;
+            // args->arg_flag |= CMDARG_FLAG_I;
+            break;
+        case 'P':
+            if (!arg)
+                args->sb_pus = 1;
+            args->sb_pus = atoi(arg);
+            args->arg_num++;
+            break;
+        case 'B':
+            if (!arg)
+                args->sb_blks = 1;
+            args->sb_blks = atoi(arg);
+            args->arg_num++;
+            break;
+        case 'L':
+            if (!arg)
+                args->logblknum = 8;
+            args->logblknum = atoi(arg);
+            args->arg_num++;
             break;
         case ARGP_KEY_END:
         case ARGP_KEY_ARG:

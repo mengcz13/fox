@@ -41,6 +41,11 @@
 #define FOX_ENGINE_1  0x1 /* All sequential */
 #define FOX_ENGINE_2  0x2 /* All round-robin */
 #define FOX_ENGINE_3  0x3 /* I/O Isolation */
+#define FOX_ENGINE_4  0x4 /* Rewrite-inplace Sequence */
+#define FOX_ENGINE_5  0x5 /* Rewrite-ls */
+#define FOX_ENGINE_6  0x6 /* Rewrite-ls, greedy GC */
+#define FOX_ENGINE_7  0x7 /* Superblock */
+#define FOX_ENGINE_8  0x8 /* Superblock + Hybrid Mapping */
 
 #define PROV_NBLK_PER_VBLK 0x1
 
@@ -67,7 +72,7 @@ enum {
 #define FOX_FLAG_DONE       (1 << 1)
 #define FOX_FLAG_MONITOR    (1 << 2)
 
-#define CMDARG_LEN          32
+#define CMDARG_LEN          512
 #define CMDARG_FLAG_D       (1 << 0)
 #define CMDARG_FLAG_T       (1 << 1)
 #define CMDARG_FLAG_C       (1 << 2)
@@ -125,6 +130,10 @@ struct fox_argp
     uint8_t     memcmp;
     uint8_t     output;
     uint32_t    engine;
+    char        inputiopath[CMDARG_LEN];  // used for engine 4/5, supporting arbitrary IO sequences!
+    uint64_t    sb_pus;
+    uint64_t    sb_blks;
+    uint64_t    logblknum;
 
     /* r/w/e parameters */
     uint8_t     io_ch;
@@ -209,6 +218,10 @@ struct fox_workload {
     pthread_cond_t          start_con;
     pthread_mutex_t         monitor_mut;
     pthread_cond_t          monitor_con;
+    char*                   inputiopath;
+    uint64_t                sb_pus;
+    uint64_t                sb_blks;
+    uint64_t                logblknum;
 };
 
 struct fox_blkbuf {
@@ -412,6 +425,11 @@ struct fox_engine   *fox_get_engine(uint16_t);
 int                  foxeng_seq_init (struct fox_workload *);
 int                  foxeng_rr_init (struct fox_workload *);
 int                  foxeng_iso_init (struct fox_workload *);
+int                  foxeng_rewrite_inplace_init (struct fox_workload *);
+int                  foxeng_rewrite_ls_init(struct fox_workload *);
+int                  foxeng_rewrite_ls_greedy_init(struct fox_workload *);
+int                  foxeng_rewrite_ls_sb_init(struct fox_workload *);
+int                  foxeng_rewrite_ls_sb_hm_init(struct fox_workload *);
 
 /* provisioning */
 int     prov_init(struct nvm_dev *dev, const struct nvm_geo *geo);

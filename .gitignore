@@ -1,3 +1,9 @@
 cscope.*
 cscope
 tags
+*.o
+fox
+pblk_direct_rw
+*.csv
+*.backup
+/output/

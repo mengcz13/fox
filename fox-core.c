@@ -33,6 +33,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/queue.h>
+#include <inttypes.h>
 #include "fox.h"
 
 LIST_HEAD(node_list, fox_node) node_head = LIST_HEAD_INITIALIZER(node_head);
@@ -158,7 +159,7 @@ struct fox_engine *fox_get_engine(uint16_t id)
 
 static int fox_init_engs (struct fox_workload *wl)
 {
-    if (foxeng_seq_init(wl) || foxeng_rr_init(wl) || foxeng_iso_init(wl))
+    if (foxeng_seq_init(wl) || foxeng_rr_init(wl) || foxeng_iso_init(wl) || foxeng_rewrite_inplace_init(wl) || foxeng_rewrite_ls_init(wl) || foxeng_rewrite_ls_greedy_init(wl) || foxeng_rewrite_ls_sb_init(wl) || foxeng_rewrite_ls_sb_hm_init(wl))
         return -1;
 
     return 0;
@@ -218,6 +219,10 @@ int main (int argc, char **argv) {
     wl->max_delay = argp->max_delay;
     wl->memcmp = argp->memcmp;
     wl->output = argp->output;
+    wl->inputiopath = argp->inputiopath;
+    wl->sb_pus = argp->sb_pus;
+    wl->sb_blks = argp->sb_blks;
+    wl->logblknum = argp->logblknum;
 
     if (wl->devname[0] == 0) {
         wl->devname = malloc (13);
